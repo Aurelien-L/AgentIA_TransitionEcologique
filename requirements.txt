@@ -4,3 +4,6 @@ langchain-ollama
 chromadb
 duckduckgo-search
 streamlit
+psutil
+polars
+pandas
