@@ -1,30 +1,33 @@
 import hashlib
 import time
+import json
 from pathlib import Path
 import pandas as pd
-#from langchain_chroma import Chroma
-from langchain.vectorstores import Chroma
+
+from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-import json
 
-# === CONFIGURATION ===
-CLEAN_DIR = Path("data/clean")
-CHROMA_DIR = Path("chroma_db")
-EMBEDDING_MODEL = "nomic-embed-text"
+
+# === CONFIGURATION PAR DÉFAUT ===
+DEFAULT_CLEAN_DIR = Path("data/clean")
+DEFAULT_CHROMA_DIR = Path("chroma_db")
+DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
 MAX_CHUNKS = 1000
 BATCH_SIZE_INDEX = 500
 
-# === UTILS ===
+
 def log_time(label: str, start: float):
     print(f"⏱️ {label}: {time.time() - start:.2f}s")
 
+
 def generate_chunk_id(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()
+
 
 def load_parquet_documents(clean_dir: Path) -> list[Document]:
     documents = []
@@ -35,34 +38,42 @@ def load_parquet_documents(clean_dir: Path) -> list[Document]:
             if text:
                 documents.append(Document(
                     page_content=text,
-                    metadata={"s": file.name[:12]}
+                    metadata={"source_file": file.name}
                 ))
     return documents
+
 
 def get_existing_ids(chroma_dir: Path) -> set[str]:
     if not chroma_dir.exists():
         return set()
     try:
+        # Embedding function None car on ne fait que récupérer les IDs
         db = Chroma(persist_directory=str(chroma_dir), embedding_function=None)
         return set(db.get()['ids'])
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ Impossible de récupérer les IDs existants : {e}")
         return set()
 
-# === PIPELINE ===
-def index_documents():
+
+def index_documents(
+    clean_dir: Path = DEFAULT_CLEAN_DIR,
+    chroma_dir: Path = DEFAULT_CHROMA_DIR,
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+    embedding=None,
+) -> dict | None:
     global_start = time.time()
 
     print("📥 Chargement des fichiers .parquet...")
     start = time.time()
-    raw_docs = load_parquet_documents(CLEAN_DIR)
+    raw_docs = load_parquet_documents(clean_dir)
     log_time("Chargement", start)
-    print(f"✅ {len(raw_docs)} documents bruts.")
+    print(f"✅ {len(raw_docs)} documents bruts chargés.")
 
     if not raw_docs:
-        print("⚠️ Aucun document trouvé.")
-        return
+        print("⚠️ Aucun document trouvé. Fin de la pipeline.")
+        return None
 
-    print("🧹 Déduplication...")
+    print("🧹 Déduplication des documents...")
     start = time.time()
     seen = set()
     unique_docs = []
@@ -72,9 +83,9 @@ def index_documents():
             seen.add(h)
             unique_docs.append(doc)
     log_time("Déduplication", start)
-    print(f"✅ {len(unique_docs)} documents uniques.")
+    print(f"✅ {len(unique_docs)} documents uniques après déduplication.")
 
-    print("🔪 Découpage en chunks...")
+    print("🔪 Découpage des documents en chunks...")
     start = time.time()
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunks = []
@@ -88,34 +99,37 @@ def index_documents():
     log_time("Découpage", start)
     print(f"✅ {len(chunks)} chunks générés.")
 
-    print("🆔 Attribution des IDs...")
+    print("🆔 Attribution des IDs aux chunks...")
     for chunk in chunks:
         chunk.metadata["id"] = generate_chunk_id(chunk.page_content)
-    
-    id_mapping = {chunk.metadata["id"]: chunk.page_content for chunk in chunks}
 
-    #  Sauvegarde dans un fichier JSON (utile pour debug + évaluation)
+    id_mapping = {chunk.metadata["id"]: chunk.page_content for chunk in chunks}
     with open("mapping_ids.json", "w", encoding="utf-8") as f:
         json.dump(id_mapping, f, indent=2, ensure_ascii=False)
+    print("💾 Sauvegarde du mapping id → texte dans mapping_ids.json")
 
-    print("📂 Récupération des IDs déjà indexés...")
-    existing_ids = get_existing_ids(CHROMA_DIR)
-    new_chunks = [c for c in chunks if c.metadata["id"] not in existing_ids]
-    print(f"🆕 {len(new_chunks)} chunks à indexer.")
+    print("📂 Récupération des IDs déjà indexés dans Chroma...")
+    existing_ids = get_existing_ids(chroma_dir)
+    new_chunks = [chunk for chunk in chunks if chunk.metadata["id"] not in existing_ids]
+    print(f"🆕 {len(new_chunks)} nouveaux chunks à indexer.")
 
     if not new_chunks:
-        print("✅ Aucun nouveau chunk à indexer.")
-        return
+        print("✅ Aucun nouveau chunk à indexer. Fin de la pipeline.")
+        return {
+            "raw_docs": len(raw_docs),
+            "unique_docs": len(unique_docs),
+            "chunks": len(chunks),
+            "indexed": 0,
+        }
 
     new_chunks = new_chunks[:MAX_CHUNKS]
 
-    print("🧠 Indexation dans Chroma (batch)...")
+    print("🧠 Indexation dans Chroma (par batch)...")
     start = time.time()
-    embedding = OllamaEmbeddings(model=EMBEDDING_MODEL)
+    embedding = embedding or OllamaEmbeddings(model=embedding_model)
     vectordb = None
-
     total = len(new_chunks)
-    batches = [new_chunks[i:i+BATCH_SIZE_INDEX] for i in range(0, total, BATCH_SIZE_INDEX)]
+    batches = [new_chunks[i:i + BATCH_SIZE_INDEX] for i in range(0, total, BATCH_SIZE_INDEX)]
 
     for i, batch in enumerate(batches, 1):
         batch_start = time.time()
@@ -124,16 +138,22 @@ def index_documents():
                 vectordb = Chroma.from_documents(
                     documents=batch,
                     embedding=embedding,
-                    persist_directory=str(CHROMA_DIR)
+                    persist_directory=str(chroma_dir)
                 )
             else:
                 vectordb.add_documents(batch)
-
             elapsed = time.time() - batch_start
             remaining = (len(batches) - i) * elapsed
             print(f"✅ Batch {i}/{len(batches)} indexé. ⏱️ Temps estimé restant : {remaining:.1f}s")
-
         except Exception as e:
-            print(f"❌ Erreur batch {i}: {e}")
-    print("✅ Chroma mise à jour avec succès.")
-    log_time("⏳ Pipeline complet", global_start)
+            print(f"❌ Erreur lors de l’indexation batch {i}: {e}")
+
+    log_time("Pipeline complète", global_start)
+    print("✅ Mise à jour de Chroma terminée avec succès.")
+
+    return {
+        "raw_docs": len(raw_docs),
+        "unique_docs": len(unique_docs),
+        "chunks": len(chunks),
+        "indexed": len(new_chunks),
+    }
