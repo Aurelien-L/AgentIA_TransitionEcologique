@@ -4,16 +4,17 @@ import json
 from pathlib import Path
 import pandas as pd
 
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-
 
 # === CONFIGURATION PAR DÉFAUT ===
 DEFAULT_CLEAN_DIR = Path("data/clean")
 DEFAULT_CHROMA_DIR = Path("chroma_db")
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+
+CACHE_FILE = Path("index_cache.json")
 
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
@@ -29,9 +30,32 @@ def generate_chunk_id(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
-def load_parquet_documents(clean_dir: Path) -> list[Document]:
+def hash_file(path: Path) -> str:
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        while chunk := f.read(8192):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_cache() -> dict:
+    if CACHE_FILE.exists():
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_cache(cache: dict):
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, indent=2, ensure_ascii=False)
+
+
+def load_parquet_documents(clean_dir: Path, changed_files: set[str]) -> list[Document]:
     documents = []
     for file in clean_dir.rglob("*.parquet"):
+        if file.name not in changed_files:
+            # On ignore les fichiers non modifiés
+            continue
         df = pd.read_parquet(file)
         for _, row in df.iterrows():
             text = " | ".join(str(value) for value in row.values if pd.notna(value)).strip()
@@ -47,7 +71,6 @@ def get_existing_ids(chroma_dir: Path) -> set[str]:
     if not chroma_dir.exists():
         return set()
     try:
-        # Embedding function None car on ne fait que récupérer les IDs
         db = Chroma(persist_directory=str(chroma_dir), embedding_function=None)
         return set(db.get()['ids'])
     except Exception as e:
@@ -63,14 +86,31 @@ def index_documents(
 ) -> dict | None:
     global_start = time.time()
 
-    print("📥 Chargement des fichiers .parquet...")
+    print("🔍 Chargement du cache de hash fichiers...")
+    cache = load_cache()
+
+    print("📥 Recherche des fichiers .parquet modifiés ou nouveaux...")
+    changed_files = set()
+    for file in clean_dir.rglob("*.parquet"):
+        current_hash = hash_file(file)
+        cached_hash = cache.get(file.name)
+        if current_hash != cached_hash:
+            print(f"🆕 Fichier modifié ou nouveau détecté: {file.name}")
+            changed_files.add(file.name)
+            cache[file.name] = current_hash
+
+    if not changed_files:
+        print("✅ Aucun fichier modifié. Pas besoin de réindexer.")
+        return None
+
+    print(f"📥 Chargement des documents des fichiers modifiés ({len(changed_files)})...")
     start = time.time()
-    raw_docs = load_parquet_documents(clean_dir)
+    raw_docs = load_parquet_documents(clean_dir, changed_files)
     log_time("Chargement", start)
     print(f"✅ {len(raw_docs)} documents bruts chargés.")
 
     if not raw_docs:
-        print("⚠️ Aucun document trouvé. Fin de la pipeline.")
+        print("⚠️ Aucun document à traiter après filtre. Fin de la pipeline.")
         return None
 
     print("🧹 Déduplication des documents...")
@@ -103,13 +143,9 @@ def index_documents(
     for chunk in chunks:
         chunk.metadata["id"] = generate_chunk_id(chunk.page_content)
 
-    id_mapping = {chunk.metadata["id"]: chunk.page_content for chunk in chunks}
-    with open("mapping_ids.json", "w", encoding="utf-8") as f:
-        json.dump(id_mapping, f, indent=2, ensure_ascii=False)
-    print("💾 Sauvegarde du mapping id → texte dans mapping_ids.json")
-
     print("📂 Récupération des IDs déjà indexés dans Chroma...")
     existing_ids = get_existing_ids(chroma_dir)
+
     new_chunks = [chunk for chunk in chunks if chunk.metadata["id"] not in existing_ids]
     print(f"🆕 {len(new_chunks)} nouveaux chunks à indexer.")
 
@@ -127,29 +163,24 @@ def index_documents(
     print("🧠 Indexation dans Chroma (par batch)...")
     start = time.time()
     embedding = embedding or OllamaEmbeddings(model=embedding_model)
-    vectordb = None
+    vectordb = Chroma(persist_directory=str(chroma_dir), embedding_function=embedding)
+
     total = len(new_chunks)
     batches = [new_chunks[i:i + BATCH_SIZE_INDEX] for i in range(0, total, BATCH_SIZE_INDEX)]
 
     for i, batch in enumerate(batches, 1):
-        batch_start = time.time()
+        batch_ids = [chunk.metadata["id"] for chunk in batch]
         try:
-            if vectordb is None:
-                vectordb = Chroma.from_documents(
-                    documents=batch,
-                    embedding=embedding,
-                    persist_directory=str(chroma_dir)
-                )
-            else:
-                vectordb.add_documents(batch)
-            elapsed = time.time() - batch_start
-            remaining = (len(batches) - i) * elapsed
-            print(f"✅ Batch {i}/{len(batches)} indexé. ⏱️ Temps estimé restant : {remaining:.1f}s")
+            vectordb.add_documents(batch, ids=batch_ids)
+            print(f"✅ Batch {i}/{len(batches)} indexé.")
         except Exception as e:
             print(f"❌ Erreur lors de l’indexation batch {i}: {e}")
 
     log_time("Pipeline complète", global_start)
     print("✅ Mise à jour de Chroma terminée avec succès.")
+
+    # Sauvegarde du cache mis à jour
+    save_cache(cache)
 
     return {
         "raw_docs": len(raw_docs),
@@ -157,3 +188,52 @@ def index_documents(
         "chunks": len(chunks),
         "indexed": len(new_chunks),
     }
+
+def update_file_in_index(
+    file_path: Path,
+    chroma_dir: Path = DEFAULT_CHROMA_DIR,
+    embedding_model: str = "nomic-embed-text",
+):
+    # 1. Charger le fichier (exemple CSV/Parquet)
+    import pandas as pd
+    df = pd.read_parquet(file_path)
+    
+    # 2. Créer documents
+    documents = []
+    for _, row in df.iterrows():
+        text = " | ".join(str(v) for v in row.values if pd.notna(v)).strip()
+        if text:
+            documents.append(Document(page_content=text, metadata={"source_file": file_path.name}))
+
+    # 3. Découper en chunks
+    splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+    chunks = []
+    for doc in documents:
+        if len(doc.page_content) < CHUNK_SIZE:
+            chunks.append(doc)
+        else:
+            chunks.extend(splitter.split_documents([doc]))
+    
+    # 4. Calculer IDs des chunks
+    for chunk in chunks:
+        chunk.metadata["id"] = generate_chunk_id(chunk.page_content)
+    
+    # 5. Charger la base Chroma existante
+    embedding = OllamaEmbeddings(model=embedding_model)
+    vectordb = Chroma(persist_directory=str(chroma_dir), embedding_function=embedding)
+    
+    # 6. Récupérer IDs déjà indexés
+    existing_ids = set(vectordb.get()['ids'])
+    
+    # 7. Filtrer les chunks déjà indexés
+    new_chunks = [chunk for chunk in chunks if chunk.metadata["id"] not in existing_ids]
+    
+    if not new_chunks:
+        print("Aucun nouveau chunk à indexer.")
+        return
+    
+    # 8. Ajouter les nouveaux chunks à la base
+    new_ids = [chunk.metadata["id"] for chunk in new_chunks]
+    vectordb.add_documents(new_chunks, ids=new_ids)
+    
+    print(f"{len(new_chunks)} chunks ajoutés à la base.")

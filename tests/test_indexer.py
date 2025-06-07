@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from langchain.schema import Document
-from indexer import index_documents
+from chroma_db import index_documents
 
 @pytest.fixture
 def fake_documents():

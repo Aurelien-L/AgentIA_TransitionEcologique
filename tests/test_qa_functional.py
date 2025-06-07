@@ -47,7 +47,7 @@ def test_ollama_agent_qa(tmp_path, sample_docs):
     vectordb = Chroma.from_documents(sample_docs, embedding=embeddings, persist_directory=str(tmp_path))
 
     # 3. Créer LLM Ollama
-    llm = ChatOllama(model="llama2")  # ou ton modèle Ollama préféré
+    llm = ChatOllama(model="llama3")
 
     # 4. Chaîne RetrievalQA (agent question/réponse)
     qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectordb.as_retriever())
