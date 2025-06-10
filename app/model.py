@@ -1,6 +1,6 @@
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from rag_agent import RagAgent
+from .rag_agent import RagAgent
 
 MODEL_NAME = "llama3"
 SYSTEM_PROMPT = """
