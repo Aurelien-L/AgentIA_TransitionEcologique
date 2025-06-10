@@ -9,6 +9,8 @@ from langchain_ollama import OllamaEmbeddings
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+from utils.chroma.run_cleaning import clean_all
+
 # === CONFIGURATION PAR DÉFAUT ===
 DEFAULT_CLEAN_DIR = Path("data/clean")
 DEFAULT_CHROMA_DIR = Path("chroma_db")
@@ -237,3 +239,12 @@ def update_file_in_index(
     vectordb.add_documents(new_chunks, ids=new_ids)
     
     print(f"{len(new_chunks)} chunks ajoutés à la base.")
+
+    
+    
+if __name__ == "__main__":
+    # Nettoyage des données brutes vers `data/clean`
+    clean_all()
+
+    # Création de la base vectorielle dans `data/vectorstore`
+    index_documents()

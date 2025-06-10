@@ -3,6 +3,9 @@ from .cleaning.csv_cleaner import read_csv_files
 from .cleaning.xls_cleaner import read_xls_files
 from .cleaning.pdf_cleaner import clean_pdf_files
 
+chemin = Path('data') / 'clean'
+chemin.mkdir(parents=True, exist_ok=True)
+
 RAW_DIR = Path("data/raw")
 CLEAN_DIR = Path("data/clean")
 
