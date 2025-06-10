@@ -20,7 +20,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 #from LLM.utils.rag.web_search import web_search
 
 from utils.search_chroma import *
-from duck_search import duck_search
+from .duck_search import duck_search
 
 
 SPECIALIZED_INSTRUCTION = """
