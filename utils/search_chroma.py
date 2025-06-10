@@ -2,6 +2,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings 
 from langchain.schema import Document
 
+
 # Repertoire où sont stockés les vecteurs 
 CHROMA_DIR= "chroma_db"
 
