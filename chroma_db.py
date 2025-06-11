@@ -11,7 +11,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from utils.chroma.run_cleaning import clean_all
 
-# === CONFIGURATION PAR DÉFAUT ===
 DEFAULT_CLEAN_DIR = Path("data/clean")
 DEFAULT_CHROMA_DIR = Path("chroma_db")
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
@@ -25,14 +24,39 @@ BATCH_SIZE_INDEX = 500
 
 
 def log_time(label: str, start: float):
+     """
+    Affiche le temps écoulé depuis un point de départ.
+
+    Args:
+        label (str): Nom de l'étape mesurée.
+        start (float): Timestamp de départ.
+    """
     print(f"⏱️ {label}: {time.time() - start:.2f}s")
 
 
 def generate_chunk_id(text: str) -> str:
+    """
+    Génère un identifiant unique (hash MD5) à partir d'un texte.
+
+    Args:
+        text (str): Texte à hasher.
+
+    Returns:
+        str: Hash MD5 du texte.
+    """
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
 def hash_file(path: Path) -> str:
+    """
+    Calcule un hash MD5 pour le contenu binaire d'un fichier.
+
+    Args:
+        path (Path): Chemin du fichier.
+
+    Returns:
+        str: Hash MD5 du fichier.
+    """
     h = hashlib.md5()
     with open(path, "rb") as f:
         while chunk := f.read(8192):
@@ -41,6 +65,12 @@ def hash_file(path: Path) -> str:
 
 
 def load_cache() -> dict:
+    """
+    Charge le cache de hachage depuis un fichier JSON.
+
+    Returns:
+        dict: Cache contenant les hachages précédents des fichiers.
+    """
     if CACHE_FILE.exists():
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -48,11 +78,27 @@ def load_cache() -> dict:
 
 
 def save_cache(cache: dict):
+    """
+    Sauvegarde le cache de hachage dans un fichier JSON.
+
+    Args:
+        cache (dict): Dictionnaire de hachages à sauvegarder.
+    """
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(cache, f, indent=2, ensure_ascii=False)
 
 
 def load_parquet_documents(clean_dir: Path, changed_files: set[str]) -> list[Document]:
+    """
+    Charge les fichiers .parquet modifiés et crée des documents LangChain.
+
+    Args:
+        clean_dir (Path): Répertoire contenant les fichiers nettoyés.
+        changed_files (set[str]): Fichiers à recharger (modifiés).
+
+    Returns:
+        list[Document]: Documents extraits à partir des fichiers .parquet.
+    """
     documents = []
     for file in clean_dir.rglob("*.parquet"):
         if file.name not in changed_files:
@@ -70,6 +116,15 @@ def load_parquet_documents(clean_dir: Path, changed_files: set[str]) -> list[Doc
 
 
 def get_existing_ids(chroma_dir: Path) -> set[str]:
+    """
+    Récupère les IDs de documents déjà indexés dans la base Chroma.
+
+    Args:
+        chroma_dir (Path): Répertoire de persistance de la base Chroma.
+
+    Returns:
+        set[str]: Ensemble des identifiants indexés.
+    """
     if not chroma_dir.exists():
         return set()
     try:
@@ -86,6 +141,18 @@ def index_documents(
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     embedding=None,
 ) -> dict | None:
+    """
+    Indexe les documents nettoyés en créant des embeddings pour Chroma.
+
+    Args:
+        clean_dir (Path): Répertoire des fichiers nettoyés.
+        chroma_dir (Path): Répertoire de la base Chroma.
+        embedding_model (str): Nom du modèle d'embedding à utiliser.
+        embedding: Instance d'un modèle d'embedding, facultatif.
+
+    Returns:
+        dict | None: Résumé de l'indexation, ou None si rien à faire.
+    """
     global_start = time.time()
 
     print("🔍 Chargement du cache de hash fichiers...")
@@ -196,18 +263,26 @@ def update_file_in_index(
     chroma_dir: Path = DEFAULT_CHROMA_DIR,
     embedding_model: str = "nomic-embed-text",
 ):
-    # 1. Charger le fichier (exemple CSV/Parquet)
+    """
+    Met à jour la base Chroma pour un seul fichier .parquet donné.
+
+    Args:
+        file_path (Path): Chemin vers le fichier à indexer.
+        chroma_dir (Path): Répertoire de la base Chroma.
+        embedding_model (str): Nom du modèle d'embedding.
+    """
+    # Charger le fichier (exemple CSV/Parquet)
     import pandas as pd
     df = pd.read_parquet(file_path)
     
-    # 2. Créer documents
+    # Créer documents
     documents = []
     for _, row in df.iterrows():
         text = " | ".join(str(v) for v in row.values if pd.notna(v)).strip()
         if text:
             documents.append(Document(page_content=text, metadata={"source_file": file_path.name}))
 
-    # 3. Découper en chunks
+    # Découper en chunks
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunks = []
     for doc in documents:
@@ -216,25 +291,25 @@ def update_file_in_index(
         else:
             chunks.extend(splitter.split_documents([doc]))
     
-    # 4. Calculer IDs des chunks
+    # Calculer IDs des chunks
     for chunk in chunks:
         chunk.metadata["id"] = generate_chunk_id(chunk.page_content)
     
-    # 5. Charger la base Chroma existante
+    # Charger la base Chroma existante
     embedding = OllamaEmbeddings(model=embedding_model)
     vectordb = Chroma(persist_directory=str(chroma_dir), embedding_function=embedding)
     
-    # 6. Récupérer IDs déjà indexés
+    # Récupérer IDs déjà indexés
     existing_ids = set(vectordb.get()['ids'])
     
-    # 7. Filtrer les chunks déjà indexés
+    # Filtrer les chunks déjà indexés
     new_chunks = [chunk for chunk in chunks if chunk.metadata["id"] not in existing_ids]
     
     if not new_chunks:
         print("Aucun nouveau chunk à indexer.")
         return
     
-    # 8. Ajouter les nouveaux chunks à la base
+    # Ajouter les nouveaux chunks à la base
     new_ids = [chunk.metadata["id"] for chunk in new_chunks]
     vectordb.add_documents(new_chunks, ids=new_ids)
     
