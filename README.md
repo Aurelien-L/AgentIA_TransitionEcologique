@@ -14,14 +14,14 @@
 
 - [Présentation](#Présentation)
 - [Fonctionnalités principales](#Fonctionnalités-principales)
-- [🗂️ Structure du projet](#🗂️-Structure-du-projet)
+- [🗂️ Structure du projet](#Structure-du-projet)
 - [Explication du code](#Explication-du-code)
 - [Installation](#Installation)
 - [Utilisation](#Utilisation)
 - [Tests](#Tests)
-- [🖼️ Screenshots](#🖼️-Screenshots)
-- [👤 Auteurs](#👤-Auteurs)
-- [📄 Licence](#📄-Licence)
+- [🖼️ Screenshots](#Screenshots)
+- [👤 Auteurs](#Auteurs)
+- [📄 Licence](#Licence)
 
 ## Présentation
 Ce projet à but pédagogique vise à concevoir un assistant conversationnel intelligent, capable de répondre à des questions en langage naturel sur la base de documents publics, grâce aux outils *LangChain*. Il doit combiner une chaîne RAG pour la recherche documentaire, un agent IA pour exécuter des actions via des outils personnalisés, une mémoire conversationnelle pour maintenir le contexte, et une interface utilisateur fonctionnelle développée avec *Streamlit*.
