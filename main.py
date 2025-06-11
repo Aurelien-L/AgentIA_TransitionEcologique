@@ -1,6 +1,8 @@
-from utils.chroma.run_cleaning import clean_all
-from chroma_db import index_documents
-from pathlib import Path
+from interface.interface_functions import launch_streamlit
 
 if __name__ == "__main__":
-    pass
+    # Chemin vers le fichier Streamlit
+    #streamlit_path = "chemin/vers/votre_fichier_streamlit.py"  # Remplacez par le chemin réel
+    streamlit_path = "interface/💡_Bulby.py" 
+    # Lancer Streamlit
+    launch_streamlit(streamlit_path)
