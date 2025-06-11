@@ -1,13 +1,17 @@
 import streamlit as st
 
+# Paramètres de la page
 st.set_page_config(page_title="Informations", 
                    page_icon="📄",
                    layout="centered")
 
+# Side bar
 with st.sidebar:
     "[![GitHub](https://img.shields.io/badge/github-%23121011.svg?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Aurelien-L/AgentIA_TransitionEcologique.git)"
 
+# Bannière
 st.image("img/banner_bot.png", use_container_width=True)
+
 
 # Présentation
 st.header("Présentation")
@@ -42,6 +46,7 @@ features = [
 for feature in features:
     st.write(feature)
 
+
 # Utilisation
 st.header("Utilisation")
 st.write(
@@ -49,8 +54,8 @@ st.write(
     "L’assistant vous répond en s’appuyant sur les sources les plus pertinentes."
 )
 
-# Auteurs
 
+# Auteurs + mascotte
 col1, col2= st.columns([0.75, 0.25], vertical_alignment="center")
 
 with col1:
