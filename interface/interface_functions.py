@@ -26,6 +26,5 @@ def launch_streamlit(streamlit_path):
     # Lancer Streamlit et afficher les logs dans le terminal
     try:
         subprocess.run(['streamlit', 'run', streamlit_path], check=True)
-        #subprocess.run(['streamlit', streamlit_path], check=True)
     except subprocess.CalledProcessError as e:
         print(f"Erreur lors du lancement de Streamlit : {e}")
