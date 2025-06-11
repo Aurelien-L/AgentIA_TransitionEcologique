@@ -1,4 +1,9 @@
+import os
+import sys
 import streamlit as st
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from app.model import ChatModel
 
 # Import images
 bulby = "img/mascotte.png"
@@ -26,15 +31,20 @@ with col2:
 with col3:
     pass
 
+if "chat_model" not in st.session_state:
+    st.session_state.chat_model = ChatModel()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
 # Affichage de l'historique avec avatars
 for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=message.get("avatar")):
         st.markdown(message["content"])
+
 # Si prompt utilisateur
 if prompt := st.chat_input("Votre question :"):
+
     # Affichage message utilisateur
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -43,8 +53,10 @@ if prompt := st.chat_input("Votre question :"):
         "content": prompt,
         "avatar": None
     })
+
     # Réponse assistant
-    response = prompt
+    response = st.session_state.chat_model.model_response(prompt)
+
     with st.chat_message("assistant", avatar=bulby_mini):
         st.markdown(response)
     st.session_state.messages.append({
