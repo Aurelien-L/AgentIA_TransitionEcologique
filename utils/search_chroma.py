@@ -1,6 +1,7 @@
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings 
 from langchain.schema import Document
+from duckduckgo_search import DDGS
 
 # Repertoire où sont stockés les vecteurs 
 CHROMA_DIR= "chroma_db"
@@ -42,3 +43,9 @@ def documentSearch(query: str, k: int = 5) -> str :
         )
     
     return "\n".join(formatted)
+
+def duck_search(message: str) -> str:
+    with DDGS() as ddgs:
+        results = ddgs.text(message, max_results=7)
+        snippets = "\n".join([r["body"] for r in results if "body" in r])
+    return snippets or "Aucune information trouvée sur le web."
