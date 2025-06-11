@@ -3,14 +3,15 @@ from dotenv import load_dotenv
 from langchain_deepseek import ChatDeepSeek
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from rag_agent import RagAgent
+from .rag_agent import RagAgent
 
-# Ceci permet d'utiliser des modèles en ligne comme gpt-x, deepseek-x, etc...
-load_dotenv(override=True)
-# 🔁 Choix du modèle
 USE_DEEPSEEK = True  # ⬅️ Mets sur False pour revenir à Llama3
 
-if USE_DEEPSEEK:
+# Ceci permet d'utiliser des modèles en ligne comme gpt-x, deepseek-x, etc...
+load_dotenv(override=True) 
+# 🔁 Choix du modèle
+
+if load_dotenv(override=True) and USE_DEEPSEEK:
     MODEL_NAME = "deepseek-chat"
     llm = ChatDeepSeek(model=MODEL_NAME, api_key=os.getenv("DEEPSEEK_API_KEY"))
 else:
@@ -25,7 +26,8 @@ Tu disposes de plusieurs outils, dont :
 - Recherche web : pour chercher des informations complémentaires sur internet, en dernier recours.
 
 ⚠️ Tu dois TOUJOURS commencer par l’outil **Recherche documents**, sauf si l'utilisateur demande explicitement une recherche sur Internet ou un site externe. 
-⚠️ Tu n’utilises l’outil Recherche web **que si la recherche documentaire ne donne pas de réponse satisfaisante.**
+⚠️ Tu n’utilises l’outil Recherche web **que si la recherche documentaire ne donne pas de réponse satisfaisante et une l'utilise que trois quatre fois maximum.**
+⚠️ Tu ne propose pas d'option supplémentaire ni de choix **tu ne fournis qu'une réponse claire et net et si tu n'as pas de réponse tu renvoie un je ne sais pas**.
 
 Tu suis **scrupuleusement** le format ReAct suivant :
 
@@ -52,7 +54,6 @@ Ne prétends jamais disposer de données en temps réel si ce n’est pas le cas
 
 Ton but est de rendre service de manière fiable, en aidant à comprendre et agir pour la transition écologique et les services publics.
 
-{input}
 """
 
 RESPONSE_MARKERS = [

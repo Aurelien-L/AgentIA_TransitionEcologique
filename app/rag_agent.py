@@ -10,8 +10,7 @@ from langchain import hub
 from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.messages import HumanMessage, AIMessage
-from utils.search_chroma import documentSearch
-from duck_search import duck_search
+from utils.search_chroma import documentSearch, duck_search
 from utils.safe_memory import SafeConversationMemory  # ✅ Remplace ConversationBufferMemory
 
 class RagAgent:

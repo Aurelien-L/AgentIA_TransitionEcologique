@@ -12,3 +12,5 @@ pymupdf
 fastexcel
 openpyxl
 pytest
+ipython
+langchain-deepseek
