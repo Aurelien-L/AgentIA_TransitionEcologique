@@ -11,7 +11,6 @@ Chaque fichier est :
 * Le fichier nettoyé est sauvegardé au format .parquet dans un dossier de sortie.
 
 ## 🛠 Résumé des fonctions principales
-Fonction	Rôle
 
 |Fonction|Rôle|
 |:--|:--|

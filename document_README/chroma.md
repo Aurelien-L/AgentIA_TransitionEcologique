@@ -67,21 +67,17 @@ Le projet utilise Polars comme bibliothèque principale pour le traitement des f
 
 Cependant, Polars peut se montrer strict dans certains cas de lecture :
 
-Encodages ambigus ou non standards.
-
-Détections de types incohérentes.
-
-Formats Excel complexes ou mal formés.
+* Encodages ambigus ou non standards.
+* Détections de types incohérentes.
+* Formats Excel complexes ou mal formés.
 
 Dans ces situations, Pandas est utilisé comme solution de secours (« fallback »). Bien que moins performant, Pandas offre une tolérance plus élevée aux erreurs de structure, ce qui permet de garantir que le pipeline de nettoyage reste robuste même face à des fichiers réels souvent imparfaits.
 
 ➡️ En résumé :
 
-Polars est privilégié pour la performance.
-
-Pandas est utilisé en repli lorsqu’un fichier ne peut pas être lu proprement par Polars.
-
-Cela permet de bénéficier des atouts de chaque bibliothèque tout en assurant la stabilité et la fiabilité du traitement des données.
+* Polars est privilégié pour la performance.
+* Pandas est utilisé en repli lorsqu’un fichier ne peut pas être lu proprement par Polars.
+* Cela permet de bénéficier des atouts de chaque bibliothèque tout en assurant la stabilité et la fiabilité du traitement des données.
 
 ### 💾 Pourquoi convertir les fichiers en .parquet ?
 Dans ce projet, les fichiers sources initiaux (.csv, .xls, et les contenus extraits des .pdf) sont convertis et enregistrés au format .parquet pour plusieurs raisons importantes :
