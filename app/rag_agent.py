@@ -1,75 +1,29 @@
 import sys
 import os
 
-# Ajouter le dossier racine à sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from IPython.display import display, clear_output, Markdown
-from dotenv import load_dotenv
 from datetime import datetime
 from langchain_ollama import ChatOllama
-#from langchain_deepseek import ChatDeepSeek
 from langchain import hub
 from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain.memory import ConversationBufferMemory
-import re
-from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
-#from LLM.utils.rag.document import document_search
-#from LLM.utils.rag.web_search import web_search
-
-from utils.search_chroma import *
-from .duck_search import duck_search
-
-
-SPECIALIZED_INSTRUCTION = """
-Tu es un assistant intelligent expert en **transition écologique**. Ton objectif est d’aider les citoyens à comprendre :
-- les lois et réglementations,
-- les subventions ou aides disponibles,
-- les bonnes pratiques pour la transition énergétique et environnementale.
-- Tu t’exprimes **en français clair**, sans emoji, ni fioritures.
-
-Tu as accès à deux outils :
-1. **Recherche documents** : pour chercher dans les documents internes fiables (ex. législation, politiques publiques, aides existantes).
-2. **Recherche web** : pour compléter avec des données à jour disponibles sur Internet si les documents internes ne suffisent pas.
-
----
-
-Lorsque tu réponds :
-- Utilise **d'abord** l’outil `Recherche documents`.
-- Si l’information n’est **pas disponible ou insuffisante**, utilise `Recherche web`.
-- Tu **dois toujours suivre la structure ReAct** :
-
-Exemple de raisonnement attendu :
-Thought: Je dois chercher la réglementation actuelle sur les panneaux solaires.
-Action: Recherche documents
-Action Input: réglementation panneaux solaires France 2024
-
-
-Puis, après avoir reçu l'information :
-
-Observation: Voici les résultats des documents internes...
-Pensée: Les documents internes répondent bien à la question.
-Réponse: En 2024, les règles pour les panneaux solaires sont...
-
-
----
-
-Tu ne dois **jamais inventer une réponse**.
-Si aucune information fiable n’est disponible après les recherches, réponds simplement : `Je ne sais pas.`
-
-Tu t’exprimes **en français clair**, sans emoji, ni fioritures.
-
----
-
-Voici la question :
-
-"""
+from utils.search_chroma import documentSearch, duck_search
+from utils.safe_memory import SafeConversationMemory  # ✅ Remplace ConversationBufferMemory
 
 class RagAgent:
-    def __init__(self, model, use_hub_prompt=True):
+    def __init__(self, model, system_prompt: str, use_hub_prompt=True, verbose=True):
         self.model = model
+        self.system_prompt = system_prompt
+
+        self.memory = SafeConversationMemory(
+            memory_key="chat_history",
+            return_messages=True,
+            input_key="input",
+            output_key="output"
+        )
 
         self.tools = [
             Tool(
@@ -81,13 +35,12 @@ class RagAgent:
                 name="Recherche web",
                 func=duck_search,
                 description="Utilise une recherche web pour des données à jour sur la transition écologique."
-            ),
+            )
         ]
 
         if use_hub_prompt:
-            base_prompt = hub.pull("hwchase17/react")  # ReAct de base
-            # Fusionne instruction spécialisée et prompt de base
-            base_prompt.template = f"{SPECIALIZED_INSTRUCTION}\n\n{base_prompt.template}"
+            base_prompt = hub.pull("hwchase17/react")
+            base_prompt.template = f"{self.system_prompt}\n\n{base_prompt.template}"
             self.prompt = base_prompt
         else:
             raise ValueError("Mode 'use_hub_prompt=False' non pris en charge dans cette version")
@@ -101,8 +54,10 @@ class RagAgent:
         self.executor = AgentExecutor.from_agent_and_tools(
             agent=self.agent,
             tools=self.tools,
-            verbose=True,
-            handle_parsing_errors=True
+            memory=self.memory,
+            verbose=verbose,
+            handle_parsing_errors=True,
+            max_iterations=7
         )
 
     def historique_to_prompt(self, historique):
@@ -116,7 +71,12 @@ class RagAgent:
 
     def search(self, historique):
         prompt = self.historique_to_prompt(historique)
-        return self.executor.invoke({"input": prompt})
+        print("\n🟦 Prompt envoyé à l’agent :\n", prompt)
+
+        response = self.executor.invoke({"input": prompt})
+
+        print("\n🟩 Résultat brut de l'agent :\n", response)
+        return response
 
     def boucle_interactive(self):
         historique = []
@@ -126,20 +86,21 @@ class RagAgent:
             if user_input.strip().lower() in ["exit", "quit", "stop"]:
                 print("👋 Fin de la session.")
                 break
+
             historique.append(HumanMessage(content=user_input))
             clear_output(wait=True)
             display(Markdown(f"**Vous :** {user_input}"))
 
             response = self.search(historique)
+
             if "output" in response:
-                answer = response["output"]
+                answer = response["output"].strip()
+                if answer == "Agent stopped due to iteration limit or time limit.":
+                    answer = (
+                        "⏱️ L'agent a été interrompu avant de pouvoir formuler une réponse complète. "
+                        "Essayez de reformuler votre question ou augmentez la limite d'itérations."
+                    )
                 historique.append(AIMessage(content=answer))
                 display(Markdown(f"**Assistant :** {answer}"))
             else:
-                display(Markdown("**Erreur dans la réponse.**"))
-
-    
-if __name__ == "__main__":
-    agent = RagAgent(ChatOllama(model="llama3"))
-    agent.boucle_interactive()
-
+                display(Markdown("**❌ Erreur dans la réponse.**"))
