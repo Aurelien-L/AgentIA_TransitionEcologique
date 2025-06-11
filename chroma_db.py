@@ -24,7 +24,7 @@ BATCH_SIZE_INDEX = 500
 
 
 def log_time(label: str, start: float):
-     """
+    """
     Affiche le temps écoulé depuis un point de départ.
 
     Args:
