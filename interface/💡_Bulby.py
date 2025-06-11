@@ -1,3 +1,5 @@
+import os
+import sys
 import streamlit as st
 import os
 import sys
@@ -39,13 +41,16 @@ if "chat_model" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+
 # Affichage de l'historique avec avatars
 for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=message.get("avatar")):
         st.markdown(message["content"])
 
+
 # Si prompt utilisateur
 if prompt := st.chat_input("Votre question :"):
+
 
     # Affichage message utilisateur
     with st.chat_message("user"):
@@ -57,6 +62,7 @@ if prompt := st.chat_input("Votre question :"):
         "content": prompt,
         "avatar": None
     })
+
 
     # Réponse assistant
     with st.chat_message("assistant", avatar=bulby_mini):
