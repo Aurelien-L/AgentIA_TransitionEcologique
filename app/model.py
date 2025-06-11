@@ -98,12 +98,3 @@ class ChatModel:
 
         self.historique.append(AIMessage(content=final_response))
         return final_response
-
-if __name__ == "__main__":
-    # Instanciation directe pour tester l'agent
-    print(f"🔧 Modèle utilisé : {MODEL_NAME}")
-    model = ChatOllama(model=MODEL_NAME)
-    from rag_agent import RagAgent  # Import ici pour éviter le cycle à l'import
-
-    agent = RagAgent(model=llm, system_prompt=SYSTEM_PROMPT)
-    agent.boucle_interactive()
