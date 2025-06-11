@@ -10,6 +10,19 @@
 
 # Agent IA avec LangChain : Transition Ecologique
 
+## 📚 Sommaire
+
+- [Présentation](#Présentation)
+- [Fonctionnalités principales](#Fonctionnalités-principales)
+- [🗂️ Structure du projet](#%EF%B8%8F-structure-du-projet)
+- [Explication du code](#Explication-du-code)
+- [Installation](#Installation)
+- [Utilisation](#Utilisation)
+- [Tests](#Tests)
+- [🖼️ Screenshots](#%EF%B8%8F-screenshots)
+- [👤 Auteurs](#-auteurs)
+- [📄 Licence](#-licence)
+
 ## Présentation
 Ce projet à but pédagogique vise à concevoir un assistant conversationnel intelligent, capable de répondre à des questions en langage naturel sur la base de documents publics, grâce aux outils *LangChain*. Il doit combiner une chaîne RAG pour la recherche documentaire, un agent IA pour exécuter des actions via des outils personnalisés, une mémoire conversationnelle pour maintenir le contexte, et une interface utilisateur fonctionnelle développée avec *Streamlit*.
 
@@ -32,13 +45,14 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 ├── data/               # Données sources (csv, pdf, xls)
 ├── img/                # Images pour l’interface
 ├── interface/          # Interface utilisateur (Streamlit)
-├── notebooks/          # Notebooks d’expérimentation
 ├── tests/              # Tests unitaires et d’intégration
 ├── utils/              # Utilitaires (ex : intégration Chroma)
 ├── main.py             # Point d’entrée principal
 ├── requirements.txt    # Dépendances Python
 └── README.md           # Ce fichier
 ```
+## Explication du code
+* [Chroma](document_README/chroma.md)
 
 ## Installation
 
