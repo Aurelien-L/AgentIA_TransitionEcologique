@@ -38,10 +38,8 @@ Avant toute indexation, le code appelle une fonction clé : `clean_all()`, situ�
 
 Cette fonction a pour rôle de préparer les données brutes provenant de différents formats (CSV, Excel, PDF) en les nettoyant, puis en les exportant au format .parquet dans le dossier data/clean.
 
-Pour cela, elle s'appuie sur trois fonctions de nettoyage spécialisées :
-
 pour ce faire il utilise 3 fonctions de  netoyage:
-- [csv_cleanet](clean_README/clean_csv.md)
+- [csv_cleaner](clean_README/clean_csv.md)
 - [pdf_cleaner](clean_README/clean_pdf.md)
 - [xls_cleaner](clean_README/clean_xls.md)
 
@@ -68,7 +66,7 @@ Le projet utilise Polars comme bibliothèque principale pour le traitement des f
 Cependant, Polars peut se montrer strict dans certains cas de lecture :
 
 * Encodages ambigus ou non standards.
-* Détections de types incohérentes.
+* Détections de types incohérents.
 * Formats Excel complexes ou mal formés.
 
 Dans ces situations, Pandas est utilisé comme solution de secours (« fallback »). Bien que moins performant, Pandas offre une tolérance plus élevée aux erreurs de structure, ce qui permet de garantir que le pipeline de nettoyage reste robuste même face à des fichiers réels souvent imparfaits.
@@ -140,7 +138,8 @@ update_file_in_index(Path("data/clean/mon_fichier.parquet"))
 ```
 
 ## 📌 Remarques
-Le projet est conçu pour être stateless côté modèle (on changer l’embedder facilement).
+
+Le projet est conçu pour être stateless côté modèle (on change l’embedder facilement).
 
 La performance est optimisée par batchs (500 documents / batch) pour l’indexation.
 

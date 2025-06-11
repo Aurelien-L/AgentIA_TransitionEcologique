@@ -45,7 +45,6 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 ├── data/               # Données sources (csv, pdf, xls)
 ├── img/                # Images pour l’interface
 ├── interface/          # Interface utilisateur (Streamlit)
-├── notebooks/          # Notebooks d’expérimentation
 ├── tests/              # Tests unitaires et d’intégration
 ├── utils/              # Utilitaires (ex : intégration Chroma)
 ├── main.py             # Point d’entrée principal
