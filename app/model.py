@@ -19,44 +19,35 @@ else:
     llm = ChatOllama(model=MODEL_NAME, temperature=0)
 
 SYSTEM_PROMPT = """
-Tu es un assistant intelligent spécialisé dans la transition écologique et les services publics. Tu aides les citoyens à comprendre des informations administratives, environnementales ou techniques de manière claire, utile et bienveillante.
+Vous êtes un assistant intelligent utilisant la méthode ReAct (Reasoning + Acting).
 
-Tu disposes de plusieurs outils, dont :
-- Recherche documents : pour interroger des documents internes fiables et validés (rapports, textes réglementaires, études publiques),
-- Recherche web : pour chercher des informations complémentaires sur internet, en dernier recours.
+Pour répondre à la question de l'utilisateur, vous devez suivre ce format précis et strict, étape par étape :
 
-⚠️ Tu dois TOUJOURS commencer par l’outil **Recherche documents**, sauf si l'utilisateur demande explicitement une recherche sur Internet. 
-⚠️ Tu n’utilises l’outil Recherche web **que si Recherche documents ne donne pas de réponse satisfaisante.**
-⚠️ Tu ne propose pas d'option supplémentaire ni de choix **tu ne fournis qu'une réponse claire et net et si tu n'as pas de réponse tu renvoie un je ne sais pas**.
+Question: <question posée par l'utilisateur>
 
-Tu suis **scrupuleusement** le format ReAct suivant :
+Thought: <votre réflexion sur la prochaine étape à effectuer>
 
-Pensée : (ta réflexion pour comprendre la demande et décider de l’action)
-Action : (le nom exact d’un outil à utiliser, sans faute)
-Entrée de l’action : (le texte à transmettre à l’outil)
-Observation : (le retour de l’outil)
-Pensée : (ce que tu en conclus)
-Réponse : (ta réponse finale, claire, utile, contextualisée)
+Action: <choisissez exactement une action parmi : "Recherche documents" ou "Recherche web">
 
-⚠️ Tu t’exprimes TOUJOURS EN FRANÇAIS, même si les documents ou les outils sont en anglais.
-⚠️ Tu n'affiche pas le raisonnement de format dans le prompt **juste Réponse:, je ne veux pas voir Pensée:, Action: Entrée de l’action, Observation :** cependant tu respecte le dit raisonnement.
-⚠️ Après Réponse,fais un saut de ligne et indique la source de ta réponse, **si que Documents alors Recherche : Documents, si que Web alors Recherche: Web, si les deux alors Recherche Documents et Web**
+Action Input: <la requête exacte que vous envoyez à cette action>
 
+Observation: <les résultats ou informations obtenues suite à l'action>
 
-Ta réponse doit être :
-- claire et bienveillante,
-- adaptée à un large public (y compris non expert ou non francophone),
-- et refléter un souci de pédagogie et de rigueur.
+Vous pouvez répéter autant de fois que nécessaire la séquence Thought → Action → Action Input → Observation.
 
-Si l’information est incertaine, partielle ou absente :
-- explique-le avec honnêteté,
-- propose une reformulation de la demande, ou
-- suggère des pistes ou sources fiables à consulter.
+Quand vous disposez d'assez d'informations pour répondre, terminez par :
 
-Ne prétends jamais disposer de données en temps réel si ce n’est pas le cas.
+Thought: J'ai réuni suffisamment d'informations.
 
-Ton but est de rendre service de manière fiable, en aidant à comprendre et agir pour la transition écologique et les services publics.
+Final Answer: <votre réponse complète et concise en français>
 
+Important :  
+- Après chaque Thought, vous devez obligatoirement spécifier une Action.  
+- L'Action doit être exactement "Recherche documents" ou "Recherche web".  
+- Respectez strictement la casse, la ponctuation, les espaces et le format indiqué.  
+- Ne donnez aucune explication ou commentaire hors du cadre indiqué.  
+- La réponse finale doit être factuelle, claire et concise.
+- Termine toujours la réponse finale par : **Source : <...>** (Documents, Web, IA ou une combinaison).
 """
 
 RESPONSE_MARKERS = [
@@ -64,7 +55,8 @@ RESPONSE_MARKERS = [
     "final answer", 
     "voici ce que je recommande", 
     "donc", 
-    "en résumé"
+    "en résumé",
+    "source :"
 ]
 
 class ChatModel:
@@ -78,23 +70,27 @@ class ChatModel:
         self.historique.append(HumanMessage(content=message))
 
         try:
-            response = self.llm.invoke(self.historique)
-            output = response.content.strip()
+            rag_response = self.agent_rag.search(self.historique)
+            if isinstance(rag_response, dict):
+                output = rag_response.get("output", "").strip()
+            else:
+                output = str(rag_response).strip()
         except Exception as e:
-            print(f"[⚠️ Erreur modèle principal] {e}")
+            print(f"[⚠️ Erreur RagAgent] {e}")
             output = ""
 
-        # 🔍 Vérifie si la réponse est insuffisante
         is_short = len(output) < 20
-        is_generic = output.lower() in ["je ne sais pas.", "je ne suis pas sûr."]
+        is_generic = output.lower() in ["je ne sais pas.", "je ne suis pas sûr.", ""]
         lacks_final = not any(marker in output.lower() for marker in RESPONSE_MARKERS)
+        missing_source_tag = not "source :" in output.lower()
 
-        if not output or is_short or is_generic or lacks_final:
-            print("🔁 Passage au RAG agent pour une meilleure réponse")
-            rag_output = self.agent_rag.search(self.historique)
-            final_response = rag_output.get("output") if isinstance(rag_output, dict) else str(rag_output)
-        else:
-            final_response = output
+        if is_short or is_generic or lacks_final or missing_source_tag:
+            try:
+                response = self.llm.invoke(self.historique)
+                output = response.content.strip()
+            except Exception as e:
+                print(f"[⚠️ Erreur modèle principal] {e}")
+                output = "Je ne sais pas."
 
-        self.historique.append(AIMessage(content=final_response))
-        return final_response
+        self.historique.append(AIMessage(content=output))
+        return output
