@@ -24,12 +24,9 @@ with st.sidebar:
 
 # Affichage bannière : triche pour la centrer en ajoutant une colonne vide avant et après l'image
 col1, col2, col3 = st.columns([0.15, 0.7, 0.15])
-with col1:
-    pass
 with col2:
     st.image(image=banner_bot)
-with col3:
-    pass
+
 
 # Si modèle n'est pas encore stocké dans la session, on le sauvegarde pour le conserver
 if "chat_model" not in st.session_state:
@@ -64,9 +61,10 @@ if prompt := st.chat_input("Votre question :"):
 
     # Réponse assistant
     with st.chat_message("assistant", avatar=bulby_mini):
+        placeholder = st.empty()  # permet d'éviter un problème de réponse fantôme
         with st.spinner("Bulby réfléchit ... 💡"):
             response = st.session_state.chat_model.model_response(prompt)
-        st.markdown(response)
+        placeholder.markdown(response)
 
     # Ajout réponse assistant dans l'historique
     st.session_state.messages.append({
@@ -74,3 +72,5 @@ if prompt := st.chat_input("Votre question :"):
         "content": response,
         "avatar": bulby_mini
     })
+
+    st.stop()
