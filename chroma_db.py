@@ -140,19 +140,10 @@ def index_documents(
     chroma_dir: Path = DEFAULT_CHROMA_DIR,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     embedding=None,
+    max_retries: int = 3,          # nombre max de tentatives par batch
+    retry_delay: float = 2.0,      # délai entre retries en secondes
+    batch_delay: float = 1.0       # délai entre batches en secondes
 ) -> dict | None:
-    """
-    Indexe les documents nettoyés en créant des embeddings pour Chroma.
-
-    Args:
-        clean_dir (Path): Répertoire des fichiers nettoyés.
-        chroma_dir (Path): Répertoire de la base Chroma.
-        embedding_model (str): Nom du modèle d'embedding à utiliser.
-        embedding: Instance d'un modèle d'embedding, facultatif.
-
-    Returns:
-        dict | None: Résumé de l'indexation, ou None si rien à faire.
-    """
     global_start = time.time()
 
     print("🔍 Chargement du cache de hash fichiers...")
@@ -237,27 +228,43 @@ def index_documents(
     total = len(new_chunks)
     batches = [new_chunks[i:i + BATCH_SIZE_INDEX] for i in range(0, total, BATCH_SIZE_INDEX)]
 
+    successful_index = False
+
     for i, batch in enumerate(batches, 1):
         batch_ids = [chunk.metadata["id"] for chunk in batch]
-        try:
-            vectordb.add_documents(batch, ids=batch_ids)
-            print(f"✅ Batch {i}/{len(batches)} indexé.")
-        except Exception as e:
-            print(f"❌ Erreur lors de l’indexation batch {i}: {e}")
+        attempt = 0
+        while attempt < max_retries:
+            try:
+                vectordb.add_documents(batch, ids=batch_ids)
+                print(f"✅ Batch {i}/{len(batches)} indexé (tentative {attempt + 1}).")
+                successful_index = True
+                break
+            except Exception as e:
+                attempt += 1
+                print(f"❌ Erreur lors de l’indexation batch {i} (tentative {attempt}): {e}")
+                if attempt < max_retries:
+                    print(f"🔄 Nouvelle tentative dans {retry_delay}s...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"⚠️ Échec définitif du batch {i} après {max_retries} tentatives.")
+        time.sleep(batch_delay)
 
     log_time("Pipeline complète", global_start)
-    print("✅ Mise à jour de Chroma terminée avec succès.")
 
-    # Sauvegarde du cache mis à jour
-    save_cache(cache)
+    if successful_index:
+        save_cache(cache)
+        print("✅ Mise à jour de Chroma et cache terminée avec succès.")
+    else:
+        print("⚠️ Aucun batch n’a été indexé avec succès. Le cache n’a pas été mis à jour.")
 
     return {
         "raw_docs": len(raw_docs),
         "unique_docs": len(unique_docs),
         "chunks": len(chunks),
-        "indexed": len(new_chunks),
+        "indexed": len(new_chunks) if successful_index else 0,
     }
-
+    
+        
 def update_file_in_index(
     file_path: Path,
     chroma_dir: Path = DEFAULT_CHROMA_DIR,

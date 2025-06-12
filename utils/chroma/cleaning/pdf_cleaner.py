@@ -2,65 +2,83 @@ from pathlib import Path
 from typing import List
 from langchain_core.documents import Document
 import fitz  # PyMuPDF
-import logging
-import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 import polars as pl
+from concurrent.futures import ThreadPoolExecutor
+import re
 
-def extract_text_from_pdf(path: Path) -> tuple[str, str] | None:
-    """Extrait le texte d'un fichier PDF.
+
+def clean_text(text: str) -> str:
+    """
+    Nettoie le texte brut extrait d'un PDF :
+    - Supprime les espaces multiples, tabulations, sauts de ligne redondants
+    - Nettoie les débuts/fins de lignes
+    """
+    text = re.sub(r"\s+", " ", text)  # Remplace tout type d'espace par un espace simple
+    return text.strip()
+
+
+def extract_text_from_pdf(path: Path) -> List[tuple[str, str]]:
+    """
+    Extrait le texte page par page d’un PDF et nettoie chaque page.
 
     Args:
-        path (Path): Le chemin du fichier PDF à lire.
+        path (Path): Chemin du fichier PDF
 
     Returns:
-        tuple[str, str] | None: Un tuple contenant le nom du fichier et son contenu texte,
-        ou None si l'extraction échoue.
+        List[tuple[str, str]]: Liste des (nom, texte) pour chaque page
     """
     try:
         doc = fitz.open(str(path))
-        text = "\n".join(page.get_text() for page in doc)
-        return path.name, text.strip()
+        return [
+            (f"{path.name}_page_{i+1}", clean_text(page.get_text()))
+            for i, page in enumerate(doc)
+        ]
     except Exception as e:
-        print(f"❌ Extraction échouée : {path.name} - {e}")
-        return None
+        print(f"❌ Erreur d'extraction PDF : {path.name} - {e}")
+        return []
 
-def process_pdf_file(file: Path, out_dir: Path) -> Document | None:
-    """Nettoie un fichier PDF en extrayant le texte et en sauvegardant le résultat en Parquet.
 
-    Args:
-        file (Path): Le chemin du fichier PDF à traiter.
-        out_dir (Path): Le dossier de sortie pour sauvegarder le fichier nettoyé.
-
-    Returns:
-        Document | None: Un objet Document avec le contenu et les métadonnées, ou None si échec.
+def process_pdf_file(file: Path, out_dir: Path) -> List[Document]:
     """
-    result = extract_text_from_pdf(file)
-    if result and result[1]:
-        file_name, text = result
-        df = pl.DataFrame({"content": [text], "source": [file_name]})
-        out_path = out_dir / (Path(file_name).stem + ".parquet")
-        df.write_parquet(out_path)
-        print(f"✅ Nettoyé : {file_name}")
-        return Document(page_content=text, metadata={"source": file_name})
-    return None
-
-def clean_pdf_files(input_folder: Path, output_folder: Path) -> list[Document]:
-    """Nettoie tous les fichiers PDF dans un dossier donné.
-
-    Chaque PDF est lu, converti en texte, sauvegardé en Parquet, et transformé en objet Document.
+    Traite un fichier PDF, extrait les pages, nettoie, sauvegarde en parquet.
 
     Args:
-        input_folder (Path): Dossier contenant les fichiers PDF bruts.
-        output_folder (Path): Dossier où sauvegarder les fichiers nettoyés.
+        file (Path): Fichier PDF à traiter
+        out_dir (Path): Dossier de sortie .parquet
 
     Returns:
-        list[Document]: Liste des documents nettoyés avec texte et métadonnées.
+        List[Document]: Liste de documents LangChain nettoyés
+    """
+    page_data = extract_text_from_pdf(file)
+    documents = []
+
+    for page_id, text in page_data:
+        if text.strip():
+            df = pl.DataFrame({"content": [text], "source": [page_id]})
+            out_path = out_dir / f"{page_id}.parquet"
+            df.write_parquet(out_path)
+            print(f"✅ PDF nettoyé : {page_id}")
+            documents.append(Document(page_content=text, metadata={"source": page_id}))
+
+    return documents
+
+
+def clean_pdf_files(input_folder: Path, output_folder: Path) -> List[Document]:
+    """
+    Nettoie tous les fichiers PDF d’un dossier.
+
+    Args:
+        input_folder (Path): Dossier d’entrée
+        output_folder (Path): Dossier de sortie
+
+    Returns:
+        List[Document]: Liste de tous les documents PDF nettoyés
     """
     output_folder.mkdir(parents=True, exist_ok=True)
     pdf_files = list(input_folder.glob("*.pdf"))
 
     with ThreadPoolExecutor() as executor:
-        results = list(executor.map(lambda f: process_pdf_file(f, output_folder), pdf_files))
+        results = executor.map(lambda f: process_pdf_file(f, output_folder), pdf_files)
 
-    return [doc for doc in results if doc is not None]
+    # Fusionne les listes de pages nettoyées
+    return [doc for sublist in results for doc in sublist]
