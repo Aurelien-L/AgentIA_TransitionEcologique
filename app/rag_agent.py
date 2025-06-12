@@ -3,15 +3,13 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from IPython.display import display, clear_output, Markdown
-from datetime import datetime
 from langchain_ollama import ChatOllama
 from langchain import hub
 from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.messages import HumanMessage, AIMessage
-from utils.search_chroma import *
-from utils.safe_memory import SafeConversationMemory  # ✅ Remplace ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from utils.search_chroma import documentSearch, duck_search
+from utils.safe_memory import SafeConversationMemory
 
 class RagAgent:
     def __init__(self, model, system_prompt: str, use_hub_prompt=True, verbose=True):
@@ -39,9 +37,7 @@ class RagAgent:
         ]
 
         if use_hub_prompt:
-            base_prompt = hub.pull("hwchase17/react")
-            base_prompt.template = f"{self.system_prompt}\n\n{base_prompt.template}"
-            self.prompt = base_prompt
+            self.prompt = hub.pull("hwchase17/react")
         else:
             raise ValueError("Mode 'use_hub_prompt=False' non pris en charge dans cette version")
 
@@ -70,37 +66,35 @@ class RagAgent:
         return prompt.strip()
 
     def search(self, historique):
-        prompt = self.historique_to_prompt(historique)
-        print("\n🟦 Prompt envoyé à l’agent :\n", prompt)
+        messages = [SystemMessage(content=self.system_prompt)] + historique
 
-        response = self.executor.invoke({"input": prompt})
+        injection = (
+            "Tu es un agent ReAct utilisant STRICTEMENT le format suivant à chaque étape :\n"
+            "\n"
+            "Question: <question>\n"
+            "Thought: <réflexion>\n"
+            "Action: <choisir exactement 'Recherche documents' ou 'Recherche web'>\n"
+            "Action Input: <requête pour l'action choisie>\n"
+            "Observation: <résultat obtenu>\n"
+            "\n"
+            "Tu répètes cette séquence autant de fois que nécessaire.\n"
+            "Quand tu as assez d'infos, termine par :\n"
+            "Thought: J'ai réuni suffisamment d'informations.\n"
+            "Final Answer: <réponse concise et claire en français>\n"
+            "Source : <Documents, Web, IA ou combinaison>\n"
+            "\n"
+            "Respecte STRICTEMENT ce format, ne saute aucune étape, ne donne aucune info hors cadre.\n"
+            "Priorise toujours dans l'ordre : Recherche documents → Recherche web → Raisonnement IA.\n"
+        )
+
+        prompt_text = injection + "\n\n" + self.historique_to_prompt(historique)
+
+        print("\n🟦 Prompt envoyé à l’agent :\n", prompt_text)
+
+        response = self.executor.invoke({
+            "input": prompt_text,
+            "chat_history": messages
+        })
 
         print("\n🟩 Résultat brut de l'agent :\n", response)
         return response
-
-    def boucle_interactive(self):
-        historique = []
-        print("🟢 Assistant transition écologique (entrez 'exit' pour quitter)\n")
-        while True:
-            user_input = input("Vous : ")
-            if user_input.strip().lower() in ["exit", "quit", "stop"]:
-                print("👋 Fin de la session.")
-                break
-
-            historique.append(HumanMessage(content=user_input))
-            clear_output(wait=True)
-            display(Markdown(f"**Vous :** {user_input}"))
-
-            response = self.search(historique)
-
-            if "output" in response:
-                answer = response["output"].strip()
-                if answer == "Agent stopped due to iteration limit or time limit.":
-                    answer = (
-                        "⏱️ L'agent a été interrompu avant de pouvoir formuler une réponse complète. "
-                        "Essayez de reformuler votre question ou augmentez la limite d'itérations."
-                    )
-                historique.append(AIMessage(content=answer))
-                display(Markdown(f"**Assistant :** {answer}"))
-            else:
-                display(Markdown("**❌ Erreur dans la réponse.**"))
