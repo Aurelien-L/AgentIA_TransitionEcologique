@@ -1,49 +1,49 @@
-# 📚 Indexation de Documents Structurés avec Chroma & LangChain
+# 📚 Indexation de Fichiers `.parquet` dans une Base Chroma (avec Cache et Déduplication)
 
-## 🧠 Objectif du code
-Ce code vise à automatiser le nettoyage, le découpage et l’indexation de fichiers structurés (au format Parquet) dans une base vectorielle persistante (Chroma). L’objectif est de permettre une recherche sémantique efficace via des embeddings générés à l’aide du modèle nomic-embed-text.
+## 🧠 Objectif
 
-## 🔧 Pourquoi ce code a été conçu
+Indexer automatiquement des fichiers `.parquet` dans une base vectorielle [Chroma](https://www.trychroma.com/) en évitant les doublons, en découpant les textes et en loguant les embeddings.
 
-**Problème rencontré :**
-- Les fichiers de données changent régulièrement (ajouts, corrections, etc.).
-- Recalculer tous les embeddings à chaque changement serait inefficace et coûteux.
-- Il fallait une solution incrémentale et robuste pour :
-- Nettoyer les données,
-- Générer uniquement les embeddings des nouvelles données,
-- Mettre à jour la base vectorielle de manière fiable.
+---
 
-**Solution mise en place :**
-- Cache local (`index_cache.json`) pour suivre les fichiers déjà indexés via un hash MD5.
-- Détection automatique des fichiers modifiés ou nouveaux.
-- Découpage intelligent des textes avec RecursiveCharacterTextSplitter.
-- Déduplication par hash de contenu.
-- Indexation incrémentale dans Chroma, avec gestion des IDs uniques.
+## 🔧 Pourquoi ce script ?
 
-## 🛠️ Fonctionnalités principales
-- ✅ Nettoyage des données via `clean_all()` (modularisé dans utils/chroma/run_cleaning.py).
+**Contexte :**
 
-- 📦 Chargement dynamique des fichiers `.parquet` dans data/clean/.
+* Des fichiers .parquet contiennent des textes issus des données nettoyé.
 
-- ✂️ Découpage intelligent en chunks de texte de taille contrôlée.
+* L’objectif est de les rendre interrogeables de manière sémantique via une base vectorielle comme Chroma.
 
-- 🧠 Génération d'embeddings via OllamaEmbeddings.
+* Il est crucial d’éviter le recalcul des embeddings à chaque exécution : un mécanisme de cache efficace est donc mis en place pour optimiser les performances.
 
-- 🗃️ Indexation vectorielle dans Chroma, avec persistance locale.
+**Ce que fait ce code :**
 
-- ⚡ Pipeline optimisée pour éviter les doublons et les recalculs inutiles.
+| Étape            | Description                                                                |
+| ---------------- | -------------------------------------------------------------------------- |
+| 📁 Chargement    | Ouvre dynamiquement tous les fichiers `.parquet` dans un dossier donné     |
+| 🧹 Nettoyage     | Ignore les documents vides ou invalides                                    |
+| 🔀 Découpage     | Découpe les textes avec `RecursiveCharacterTextSplitter`                   |
+| 🔐 Déduplication | Hash du contenu des chunks pour éviter les doublons                        |
+| 🧠 Embeddings    | Utilise `OllamaEmbeddings` (ex : nomic-embed-text, llama3, etc.)           |
+| 🧱 Indexation    | Envoie les chunks dans Chroma avec des IDs uniques                         |
+| 💾 Cache         | Utilise un fichier `.json` pour ne pas retraiter deux fois un même fichier |
+
+---
 
 ## 🧹 Nettoyage des fichiers bruts
-Avant toute indexation, le code appelle une fonction clé : `clean_all()`, située dans utils/chroma/run_cleaning.py.
 
-Cette fonction a pour rôle de préparer les données brutes provenant de différents formats (CSV, Excel, PDF) en les nettoyant, puis en les exportant au format .parquet dans le dossier data/clean.
+Avant toute indexation, le code appelle une fonction clé : `clean_all()`, située dans `utils/chroma/run_cleaning.py`.
 
-pour ce faire il utilise 3 fonctions de  netoyage:
-- [csv_cleaner](clean_README/clean_csv.md)
-- [pdf_cleaner](clean_README/clean_pdf.md)
-- [xls_cleaner](clean_README/clean_xls.md)
+Cette fonction a pour rôle de préparer les données brutes provenant de différents formats (CSV, Excel, PDF) en les nettoyant, puis en les exportant au format `.parquet` dans le dossier `data/clean`.
 
-### Résultat attendu
+Pour ce faire, elle utilise 3 fonctions de nettoyage spécialisées :
+
+* [csv\_cleaner](clean_README/clean_csv.md)
+* [pdf\_cleaner](clean_README/clean_pdf.md)
+* [xls\_cleaner](clean_README/clean_xls.md)
+
+### ✅ Résultat attendu
+
 Après exécution de `clean_all()` :
 
 Tous les fichiers bruts sont nettoyés, homogénéisés et enregistrés dans :
@@ -53,94 +53,154 @@ data/clean/csv/
 data/clean/xls/
 data/clean/pdf/
 ```
-Chaque fichier nettoyé est ensuite converti au format `.parquet`, prêt à être chargé dans la base vectorielle via la fonction index_documents().
 
-### ⚖️ Pourquoi utiliser Polars et Pandas ensemble ?
+Chaque fichier nettoyé est ensuite converti au format `.parquet`, prêt à être chargé dans la base vectorielle via la fonction `index_documents()`.
+
+---
+
+### 🔍 Pourquoi .parquet est préféré dans ce contexte
+* Format binaire ultra-rapide à lire/écrire
+    * .parquet est un format colonnaire binaire compressé, contrairement à .csv ou .xls qui sont textuels.
+    * Résultat : Chargement et écriture bien plus rapides (surtout pour des gros volumes).
+    * Exemple : lire 10 fichiers .parquet peut être 5 à 10 fois plus rapide qu’avec des .csv.
+
+* Compression native (snappy/zstd)
+    * .parquet compresse automatiquement les données sans perte.
+    * Taille des fichiers réduite de 30% à 80% par rapport aux .csv ou .xls.
+    * Cela accélère aussi l’I/O (moins de données à lire depuis le disque).
+
+* Schéma explicite et typé
+    * Les .csv stockent tout en texte, donc il faut souvent parser les types à la main (int, float, datetime).
+    * .parquet conserve les types de colonnes : plus sûr, plus stable, moins d’erreurs.
+
+*  Interopérabilité & écosystème Big Data
+    * .parquet est nativement supporté par Pandas, Polars, Spark, DuckDB, Dask, etc.
+    * On peux facilement charger un fichier .parquet pour un traitement distribué ou vectorisé.
+
+* Nettoyage préliminaire figé
+Dans le pipeline :
+    * On pars d’un .pdf ou .xls
+    * On extrais et transformes le contenu en texte nettoyé
+    * On le stockes une fois propre en .parquet
+    * Cela permet de ne plus jamais retraiter les fichiers bruts, sauf s’ils sont modifiés.
+    * On n’indexes que les .parquet, ce qui isole la partie texte utile.
+
+#### ❌ Inconvénients des formats bruts :
+
+|Format|Inconvénients principaux|
+|---|---|
+|.pdf|Non-structuré, pas adapté à l’analyse ou l’indexation directe|
+|.csv|Lourd en I/O, fragile aux erreurs de format, pas typé|
+|.xls(x)|Propriétaire, lent à charger, dépend de bibliothèques lourdes|
+
+#### 🧠 Exemple dans le contexte :
+Source : PDF brut = bruit, bruit visuel, sauts de ligne, erreurs d’OCR
+
+Extraction : on nettoies → texte clair
+
+Sauvegarde : .parquet = version "propre, lisible, rapide"
+
+Indexation : .parquet → LangChain → chunks → Chroma
+
+#### ✅ Résumé
+
+|Critère|.parquet|.csv|.pdf|.xls|
+|---|---|---|---|---|
+Vitesse de lecture|🟢 Excellente|🔴 Faible|🔴 Très faible|🟠 Moyenne
+|Compression|🟢 Native (Snappy)|🔴 Aucune|🟢 possible(PDF)|🟠 Variable|
+|Support des types|🟢 Fort|🔴 Faible|🔴 Aucun|🟢 Moyen|
+|Lisible par machine|🟢 Oui|🟢 Oui|🔴 Non|🟠 Oui|
+|Usage dans pipeline|🟢 Idéal|🟠 Ok pour petits jeux|🔴 Prétraitement requis|🟠 Ok mais lent
+
+
+## ⚖️ Pourquoi utiliser Polars et Pandas ensemble ?
 
 <div style="text-align: center;">
-    <img src="../img/polars_and_pandas.png" alt="Description de l'image" width="400" alignment="center">
+    <img src="../img/polars_and_pandas.png" alt="Polars vs Pandas" width="400" />
 </div>
 
-Le projet utilise Polars comme bibliothèque principale pour le traitement des fichiers CSV, Excel et PDF convertis. Polars est plus rapide, plus léger en mémoire et hautement parallélisable par rapport à Pandas, ce qui en fait un excellent choix pour les pipelines de données intensifs.
+La pipeline d’indexation repose principalement sur **Polars** pour ses performances, tout en conservant **Pandas** comme solution de repli (fallback) dans les cas plus complexes.
 
-Cependant, Polars peut se montrer strict dans certains cas de lecture :
+**Polars** est utilisé en priorité car :
 
-* Encodages ambigus ou non standards.
-* Détections de types incohérents.
-* Formats Excel complexes ou mal formés.
+* 🚀 Il est **plus rapide** que Pandas, surtout sur les gros fichiers.
+* 🧠 Il utilise un traitement **colonnaire** optimisé et **multithreadé**.
+* 📉 Il consomme **moins de mémoire**.
 
-Dans ces situations, Pandas est utilisé comme solution de secours (« fallback »). Bien que moins performant, Pandas offre une tolérance plus élevée aux erreurs de structure, ce qui permet de garantir que le pipeline de nettoyage reste robuste même face à des fichiers réels souvent imparfaits.
+Cependant, **Pandas** est toujours utile dans les cas suivants :
 
-➡️ En résumé :
+* 📄 Fichiers mal formés (Excel mal encodé, CSV ambigus...).
+* 🧩 Types de colonnes difficiles à inférer automatiquement.
+* 🧵 Besoin de flexibilité maximale dans le parsing.
 
-* Polars est privilégié pour la performance.
-* Pandas est utilisé en repli lorsqu’un fichier ne peut pas être lu proprement par Polars.
-* Cela permet de bénéficier des atouts de chaque bibliothèque tout en assurant la stabilité et la fiabilité du traitement des données.
+➡️ **En résumé** :
 
-### 💾 Pourquoi convertir les fichiers en .parquet ?
-Dans ce projet, les fichiers sources initiaux (.csv, .xls, et les contenus extraits des .pdf) sont convertis et enregistrés au format .parquet pour plusieurs raisons importantes :
+| 🐍 Lib     | Avantages                                               | Rôle dans le pipeline                   |
+| ---------- | ------------------------------------------------------- | --------------------------------------- |
+| **Polars** | Ultra rapide, typage strict, faible consommation        | Lecture principale et nettoyage initial |
+| **Pandas** | Tolérant aux erreurs, très mature, nombreuses fonctions | Fallback si Polars échoue               |
 
-* **Efficacité de stockage :** Le format Parquet est un format colonne compressé, ce qui réduit significativement la taille des fichiers comparé aux .csv classiques, tout en conservant toutes les informations.
+🎯 **Bénéfice** : Cette combinaison offre le **meilleur des deux mondes** : performance et robustesse, avec une compatibilité maximale même pour des fichiers mal structurés ou issus de sources hétérogènes.
 
-* **Performance en lecture/écriture :** Parquet est optimisé pour un accès rapide aux colonnes spécifiques des données, ce qui accélère grandement les opérations de lecture, tri, filtrage et analyse, surtout sur de gros volumes.
+---
 
-* **Typage des données conservé :** Contrairement au CSV, Parquet conserve les types de données (entiers, flottants, dates, etc.) de manière native, évitant les erreurs ou conversions répétées lors du traitement.
+## 🛠️ Utilisation
 
-* **Interopérabilité avec les outils modernes :** De nombreux outils et bibliothèques de data science (comme Polars, Pandas, Apache Spark) supportent nativement Parquet, facilitant l’intégration dans des pipelines complexes.
-
-* **Meilleure gestion des données volumineuses :** Parquet est conçu pour gérer des datasets volumineux de manière efficace, en limitant la charge mémoire et en permettant un traitement parallèle.
-
-En résumé, le passage au format .parquet rend le pipeline de traitement plus rapide, plus léger et plus fiable, comparé à une gestion directe des fichiers source qui peuvent être volumineux, mal formatés ou peu optimisés.
-
-## 🚀 Exécution
+### 🐍 Lancer l’indexation principale :
 
 ```bash
 python chroma_db.py
 ```
 
 Cela va :
-- Nettoyer les données brutes,
-- Détecter les fichiers .parquet modifiés,
-- Créer les embeddings,
-- Mettre à jour la base Chroma de manière incrémentale.
 
-### 🔁 Suggestion : automatisation avec CRON (optionnel)
+* charger tous les `.parquet` dans `data/clean` (via `glob`),
+* découper les textes en chunks,
+* ignorer ceux déjà vus (cache JSON),
+* générer les embeddings,
+* indexer dans la base Chroma.
 
-Pour automatiser cette tâche régulièrement (par exemple, tous les jours ou toutes les semaines), il est possible d’utiliser un planificateur comme CRON.
-
-> 💡 Cela permettrait de maintenir la base Chroma à jour automatiquement sans intervention manuelle, idéalement à des moments de faible affluence (comme tard le soir ou tôt le matin).
-
-Exemple de ligne CRON (exécution quotidienne à 2h du matin) :
-```bash
-0 2 * * * /usr/bin/python3 /chemin/vers/chroma_db.py >> /chemin/vers/logs/chroma_cron.log 2>&1
-```
-
-## ⚙️ Configuration par défaut
-Cette section définit les paramètres et chemins par défaut utilisés tout au long du pipeline d’indexation et de nettoyage :
-
-|variable|description|
-|:-------|:-------|
-|`DEFAULT_CLEAN_DIR`|dossier où sont stockés les fichiers nettoyés et transformés (parquet notamment), issus des fichiers bruts.|
-|`DEFAULT_CHROMA_DIR`|répertoire où la base de données vectorielle Chroma est persistée, pour stocker les embeddings et documents indexés.|
-|`DEFAULT_EMBEDDING_MODEL`|nom du modèle d’embedding utilisé pour transformer les textes en vecteurs (ici "nomic-embed-text").|
-|`CACHE_FILE`|fichier JSON qui sert à garder en mémoire les hashs des fichiers déjà traités, afin de détecter uniquement les changements et éviter un re-traitement inutile.|
-|`CHUNK_SIZE`|taille maximale (en nombre de caractères) pour chaque segment de texte (chunk) découpé dans les documents.|
-|`CHUNK_OVERLAP`|nombre de caractères en chevauchement entre deux chunks successifs, pour assurer une continuité contextuelle.|
-|`MAX_CHUNKS`|nombre maximal de chunks à indexer dans une session, pour limiter la charge.|
-|`BATCH_SIZE_INDEX`|taille des lots (batches) d’indexation envoyés à la base Chroma, pour un traitement en plusieurs passes optimisé.|
-
-## 🔄 Mise à jour manuelle d’un seul fichier
-Si on veux réindexer un fichier précis (utile en cas de mise à jour isolée) :
-
+### 🔄 Mettre à jour un fichier spécifique
 
 ```python
 update_file_in_index(Path("data/clean/mon_fichier.parquet"))
 ```
 
-## 📌 Remarques
+### ⚙️ Paramètres par défaut
 
-Le projet est conçu pour être stateless côté modèle (on change l’embedder facilement).
+| Variable                  | Rôle                                                  |
+| ------------------------- | ----------------------------------------------------- |
+| `DEFAULT_CLEAN_DIR`       | Dossier contenant les `.parquet` nettoyés             |
+| `DEFAULT_CHROMA_DIR`      | Dossier où est stockée la base Chroma                 |
+| `DEFAULT_EMBEDDING_MODEL` | Modèle utilisé pour vectoriser (ex: nomic-embed-text) |
+| `CHUNK_SIZE`              | Longueur des morceaux de texte                        |
+| `CHUNK_OVERLAP`           | Chevauchement entre deux chunks                       |
+| `MAX_CHUNKS`              | Nombre maximal de chunks indexés à la fois            |
+| `BATCH_SIZE_INDEX`        | Nombre de documents envoyés par batch à Chroma        |
 
-La performance est optimisée par batchs (500 documents / batch) pour l’indexation.
+### 📁 Cache utilisé
 
-La logique est résistante aux redémarrages grâce au cache.
+Le cache est stocké dans `index_cache.json`.
+
+| Élément           | Rôle                                        |
+| ----------------- | ------------------------------------------- |
+| `md5 du fichier`  | Empêche de retraiter un fichier déjà indexé |
+| `hash des chunks` | Évite d’avoir deux fois le même contenu     |
+
+### 🧪 Exemple de log pour debug
+
+```bash
+✅ Loaded 5 files.
+→ 'ocr_rapport_2024.parquet' : 134 chunks
+✅ 127 chunks nouveaux (7 déjà indexés)
+📥 Indexés en 3 batchs (batch_size=50)
+```
+
+---
+
+## 📌 Remarques complémentaires
+
+* Les IDs dans Chroma sont dérivés des hash de chaque chunk de texte (garantie d’unicité).
+* Les documents peuvent contenir des colonnes comme `source`, `id`, etc., conservées dans les métadonnées.
+* Le cache est persistant et robuste aux crashs.
+* L'embeddage fonctionne avec n’importe quel modèle LangChain-compatible (`OllamaEmbeddings`, `OpenAIEmbeddings`, etc.).
