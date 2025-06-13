@@ -1,8 +1,3 @@
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from langchain_ollama import ChatOllama
 from langchain import hub
 from langchain_core.tools import Tool
@@ -69,32 +64,63 @@ class RagAgent:
         messages = [SystemMessage(content=self.system_prompt)] + historique
 
         injection = (
-            "Tu es un agent ReAct utilisant STRICTEMENT le format suivant à chaque étape :\n"
-            "\n"
-            "Question: <question>\n"
-            "Thought: <réflexion>\n"
-            "Action: <choisir exactement 'Recherche documents' ou 'Recherche web'>\n"
-            "Action Input: <requête pour l'action choisie>\n"
-            "Observation: <résultat obtenu>\n"
-            "\n"
-            "Tu répètes cette séquence autant de fois que nécessaire.\n"
-            "Quand tu as assez d'infos, termine par :\n"
-            "Thought: J'ai réuni suffisamment d'informations.\n"
-            "Final Answer: <réponse concise et claire en français>\n"
-            "Source : <Documents, Web, IA ou combinaison>\n"
-            "\n"
-            "Respecte STRICTEMENT ce format, ne saute aucune étape, ne donne aucune info hors cadre.\n"
-            "Priorise toujours dans l'ordre : Recherche documents → Recherche web → Raisonnement IA.\n"
+        "Tu es un agent ReAct. Tu dois OBLIGATOIREMENT suivre ce format exact à chaque étape :\n\n"
+        "Question: <question>\n"
+        "Thought: <réflexion sur la prochaine étape>\n"
+        "Action: <choisir uniquement [Recherche documents] ou [Recherche web]>\n"
+        "Action Input: <requête à rechercher>\n"
+        "Observation: <résultat obtenu>\n\n"
+        "Quand tu as suffisamment d'informations, tu termines par :\n"
+        "Thought: J'ai réuni suffisamment d'informations.\n"
+        "Final Answer: <réponse finale claire et concise en français>\n"
+        "Source : <Documents, Web, IA ou combinaison>\n\n"
+        "⚠️ Tu DOIS commencer par une [Recherche documents]. C'est OBLIGATOIRE.\n"
+        "⚠️ Tu DOIS intégrer les documents trouvés dans ta réponse, même s’ils ne suffisent pas.\n"
+        "⚠️ Tu NE PEUX PAS répondre avec l’IA seule, sauf si documents ET web échouent complètement.\n"
+        "⚠️ Le web est un dernier recours, jamais le premier.\n"
+        "NE DONNE AUCUNE réponse sans source explicite. NE SAUTE AUCUNE ÉTAPE.\n\n"
+        "Exemple :\n"
+        "Question: Quelle est l’empreinte carbone totale de la France en 2021 ?\n"
+        "Thought: Je commence par chercher dans les documents.\n"
+        "Action: Recherche documents\n"
+        "Action Input: empreinte carbone France 2021\n"
+        "Observation: Les documents indiquent environ 663 millions de tonnes équivalent CO2.\n"
+        "Thought: J'ai réuni suffisamment d'informations.\n"
+        "Final Answer: L'empreinte carbone totale de la France en 2021 était d'environ 663 millions de tonnes équivalent CO2.\n"
+        "Source : Documents\n"
         )
+
 
         prompt_text = injection + "\n\n" + self.historique_to_prompt(historique)
 
         print("\n🟦 Prompt envoyé à l’agent :\n", prompt_text)
 
+        # Exécution de l'agent
         response = self.executor.invoke({
             "input": prompt_text,
             "chat_history": messages
         })
 
-        print("\n🟩 Résultat brut de l'agent :\n", response)
-        return response
+        # Extraction du texte brut
+        output = response.get("output", "") if isinstance(response, dict) else str(response)
+
+        def filter_output(text: str) -> str:
+            lines = text.splitlines()
+            final_answer = None
+            source = None
+            for line in lines:
+                lline = line.lower().strip()
+                if lline.startswith("final answer:"):
+                    final_answer = line.split(":", 1)[1].strip()
+                elif lline.startswith("source :"):
+                    source = line.split(":", 1)[1].strip()
+            if final_answer is None:
+                return text.strip()
+            if source:
+                return f"{final_answer}\n\nSource : {source}"
+            return final_answer
+
+        final_output = filter_output(output)
+
+        print("\n🟩 Résultat filtré :\n", final_output)
+        return final_output
