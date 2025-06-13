@@ -1,17 +1,10 @@
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from IPython.display import display, clear_output, Markdown
-from datetime import datetime
 from langchain_ollama import ChatOllama
 from langchain import hub
 from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.messages import HumanMessage, AIMessage
-from utils.search_chroma import *
-from utils.safe_memory import SafeConversationMemory  # ✅ Remplace ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from utils.search_chroma import documentSearch, duck_search
+from utils.safe_memory import SafeConversationMemory
 
 class RagAgent:
     def __init__(self, model, system_prompt: str, use_hub_prompt=True, verbose=True):
@@ -39,9 +32,7 @@ class RagAgent:
         ]
 
         if use_hub_prompt:
-            base_prompt = hub.pull("hwchase17/react")
-            base_prompt.template = f"{self.system_prompt}\n\n{base_prompt.template}"
-            self.prompt = base_prompt
+            self.prompt = hub.pull("hwchase17/react")
         else:
             raise ValueError("Mode 'use_hub_prompt=False' non pris en charge dans cette version")
 
@@ -70,37 +61,66 @@ class RagAgent:
         return prompt.strip()
 
     def search(self, historique):
-        prompt = self.historique_to_prompt(historique)
-        print("\n🟦 Prompt envoyé à l’agent :\n", prompt)
+        messages = [SystemMessage(content=self.system_prompt)] + historique
 
-        response = self.executor.invoke({"input": prompt})
+        injection = (
+        "Tu es un agent ReAct. Tu dois OBLIGATOIREMENT suivre ce format exact à chaque étape :\n\n"
+        "Question: <question>\n"
+        "Thought: <réflexion sur la prochaine étape>\n"
+        "Action: <choisir uniquement [Recherche documents] ou [Recherche web]>\n"
+        "Action Input: <requête à rechercher>\n"
+        "Observation: <résultat obtenu>\n\n"
+        "Quand tu as suffisamment d'informations, tu termines par :\n"
+        "Thought: J'ai réuni suffisamment d'informations.\n"
+        "Final Answer: <réponse finale claire et concise en français>\n"
+        "Source : <Documents, Web, IA ou combinaison>\n\n"
+        "⚠️ Tu DOIS commencer par une [Recherche documents]. C'est OBLIGATOIRE.\n"
+        "⚠️ Tu DOIS intégrer les documents trouvés dans ta réponse, même s’ils ne suffisent pas.\n"
+        "⚠️ Tu NE PEUX PAS répondre avec l’IA seule, sauf si documents ET web échouent complètement.\n"
+        "⚠️ Le web est un dernier recours, jamais le premier.\n"
+        "NE DONNE AUCUNE réponse sans source explicite. NE SAUTE AUCUNE ÉTAPE.\n\n"
+        "Exemple :\n"
+        "Question: Quelle est l’empreinte carbone totale de la France en 2021 ?\n"
+        "Thought: Je commence par chercher dans les documents.\n"
+        "Action: Recherche documents\n"
+        "Action Input: empreinte carbone France 2021\n"
+        "Observation: Les documents indiquent environ 663 millions de tonnes équivalent CO2.\n"
+        "Thought: J'ai réuni suffisamment d'informations.\n"
+        "Final Answer: L'empreinte carbone totale de la France en 2021 était d'environ 663 millions de tonnes équivalent CO2.\n"
+        "Source : Documents\n"
+        )
 
-        print("\n🟩 Résultat brut de l'agent :\n", response)
-        return response
 
-    def boucle_interactive(self):
-        historique = []
-        print("🟢 Assistant transition écologique (entrez 'exit' pour quitter)\n")
-        while True:
-            user_input = input("Vous : ")
-            if user_input.strip().lower() in ["exit", "quit", "stop"]:
-                print("👋 Fin de la session.")
-                break
+        prompt_text = injection + "\n\n" + self.historique_to_prompt(historique)
 
-            historique.append(HumanMessage(content=user_input))
-            clear_output(wait=True)
-            display(Markdown(f"**Vous :** {user_input}"))
+        print("\n🟦 Prompt envoyé à l’agent :\n", prompt_text)
 
-            response = self.search(historique)
+        # Exécution de l'agent
+        response = self.executor.invoke({
+            "input": prompt_text,
+            "chat_history": messages
+        })
 
-            if "output" in response:
-                answer = response["output"].strip()
-                if answer == "Agent stopped due to iteration limit or time limit.":
-                    answer = (
-                        "⏱️ L'agent a été interrompu avant de pouvoir formuler une réponse complète. "
-                        "Essayez de reformuler votre question ou augmentez la limite d'itérations."
-                    )
-                historique.append(AIMessage(content=answer))
-                display(Markdown(f"**Assistant :** {answer}"))
-            else:
-                display(Markdown("**❌ Erreur dans la réponse.**"))
+        # Extraction du texte brut
+        output = response.get("output", "") if isinstance(response, dict) else str(response)
+
+        def filter_output(text: str) -> str:
+            lines = text.splitlines()
+            final_answer = None
+            source = None
+            for line in lines:
+                lline = line.lower().strip()
+                if lline.startswith("final answer:"):
+                    final_answer = line.split(":", 1)[1].strip()
+                elif lline.startswith("source :"):
+                    source = line.split(":", 1)[1].strip()
+            if final_answer is None:
+                return text.strip()
+            if source:
+                return f"{final_answer}\n\nSource : {source}"
+            return final_answer
+
+        final_output = filter_output(output)
+
+        print("\n🟩 Résultat filtré :\n", final_output)
+        return final_output
