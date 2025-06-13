@@ -79,6 +79,10 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 
 ## 🖼️ Screenshots
 
+![main_interface](img/screen_interface.PNG)
+  
+![presentation_interface](img/screen_presentation.PNG)
+
 
 ## 👤 Auteurs
 [ @aruide ](https://github.com/aruide)\
