@@ -18,7 +18,6 @@
 - [Explication du code](#Explication-du-code)
 - [Installation](#Installation)
 - [Utilisation](#Utilisation)
-- [Tests](#Tests)
 - [🖼️ Screenshots](#%EF%B8%8F-screenshots)
 - [👤 Auteurs](#-auteurs)
 - [📄 Licence](#-licence)
@@ -41,11 +40,10 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 
 ```
 .
-├── app/                # Logique métier (agents, modèles, outils de recherche)
+├── app/                # IA (agents, modèles, outils de recherche)
 ├── data/               # Données sources (csv, pdf, xls)
 ├── img/                # Images pour l’interface
 ├── interface/          # Interface utilisateur (Streamlit)
-├── tests/              # Tests unitaires et d’intégration
 ├── utils/              # Utilitaires (ex : intégration Chroma)
 ├── main.py             # Point d’entrée principal
 ├── requirements.txt    # Dépendances Python
@@ -53,6 +51,7 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 ```
 ## Explication du code
 * [Chroma](document_README/chroma.md)
+* [Interface Streamlit](document_README/streamlit.md)
 
 ## Installation
 
@@ -77,12 +76,6 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 - Posez vos questions sur la transition écologique.
 - L’assistant vous répond en s’appuyant sur les sources les plus pertinentes.
 
-## Tests
-
-Pour lancer les tests :
-```sh
-pytest tests/
-```
 
 ## 🖼️ Screenshots
 
