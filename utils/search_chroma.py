@@ -16,7 +16,7 @@ vectordb = Chroma(
 )
 retriever = vectordb.as_retriever(search_kwargs={"k": 24})
 
-def documentSearch(query: str, k: int = 8) -> str:
+def documentSearch(query: str, k: int = 24) -> str:
     """
     Lance une recherche vectorielle via retriever
     """

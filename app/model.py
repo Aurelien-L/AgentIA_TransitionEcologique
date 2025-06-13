@@ -7,17 +7,20 @@ from .rag_agent import RagAgent
 
 USE_DEEPSEEK = True  # ⬅️ Mets sur False pour revenir à Llama3
 
-# Ceci permet d'utiliser des modèles en ligne comme gpt-x, deepseek-x, etc...
+# Chargement des variables d'environnement depuis un fichier .env
 load_dotenv(override=True) 
-# 🔁 Choix du modèle
 
+# 🔁 Choix du modèle à utiliser selon la variable USE_DEEPSEEK et la présence des clés d'API
 if load_dotenv(override=True) and USE_DEEPSEEK:
-    MODEL_NAME = "deepseek-chat"
+    MODEL_NAME = "deepseek-chat"  # Nom du modèle DeepSeek à utiliser
+    # Initialisation de l'instance LLM DeepSeek avec clé API récupérée dans les variables d'environnement
     llm = ChatDeepSeek(model=MODEL_NAME, api_key=os.getenv("DEEPSEEK_API_KEY"))
 else:
-    MODEL_NAME = "llama3"
+    MODEL_NAME = "llama3"  # Sinon on revient à Llama3
+    # Initialisation du modèle Llama3 avec température 0 (réponses déterministes)
     llm = ChatOllama(model=MODEL_NAME, temperature=0)
 
+# PROMPT SYSTÈME utilisé pour guider le comportement de l'assistant intelligent
 SYSTEM_PROMPT = """
 Tu es un assistant intelligent spécialisé dans les questions liées à la transition écologique.
 
@@ -64,19 +67,46 @@ Source : Documents
 """
 
 
+# Liste des mots clés pour détecter une réponse finale dans la sortie du modèle
 RESPONSE_MARKERS = ["réponse", "final answer", "source :"]
 
 class ChatModel:
+    """
+    Classe représentant le modèle de chat intelligent combinant un LLM (DeepSeek ou Llama3)
+    avec un agent RAG (Recherche Augmentée par Génération) pour gérer la logique ReAct.
+    """
+
     def __init__(self, model=llm, system_prompt=SYSTEM_PROMPT):
+        """
+        Initialise le modèle de chat avec un modèle LLM et un prompt système.
+
+        Args:
+            model: instance du modèle LLM (par défaut celui choisi plus haut)
+            system_prompt: chaîne de caractères définissant le prompt système pour guider l'agent
+        """
         self.system_prompt = system_prompt
         self.llm = model
+        # Historique des messages échangés (avec un message système initial)
         self.historique = [SystemMessage(content=system_prompt)]
+        # Initialisation de l'agent RAG avec le même LLM et prompt
         self.agent_rag = RagAgent(self.llm, system_prompt=system_prompt)
 
     def _filter_final_answer_and_source(self, text: str) -> str:
+        """
+        Extrait la réponse finale et la source dans le texte renvoyé par l'agent,
+        en respectant le format attendu (final answer + source).
+
+        Args:
+            text: chaîne de caractères contenant la sortie brute du modèle
+
+        Returns:
+            Une chaîne avec uniquement la réponse finale et la source formatée,
+            ou le texte original si aucun marqueur n'a été trouvé.
+        """
         final_answer = None
         source = None
 
+        # Analyse ligne par ligne pour trouver "final answer" et "source"
         for line in text.splitlines():
             line_lower = line.lower().strip()
             if line_lower.startswith("final answer:"):
@@ -84,21 +114,36 @@ class ChatModel:
             elif line_lower.startswith("source :"):
                 source = line.split(":", 1)[1].strip()
 
+        # Si aucune réponse finale, on retourne le texte brut (ex : message d'erreur)
         if final_answer is None:
             return text.strip()
 
+        # Si la source est présente, on la concatène proprement à la réponse finale
         if source:
             return f"{final_answer}\n\nSource : {source}"
         else:
             return final_answer
 
     def model_response(self, message: str) -> str:
+        """
+        Traite un message utilisateur, interroge l'agent RAG, gère les exceptions,
+        filtre la réponse pour ne garder que la réponse finale et la source,
+        et met à jour l'historique de la conversation.
+
+        Args:
+            message: message texte de l'utilisateur
+
+        Returns:
+            La réponse finale formatée à retourner à l'utilisateur.
+        """
+        # Ajout du message utilisateur à l'historique
         self.historique.append(HumanMessage(content=message))
 
         try:
+            # Recherche via l'agent RAG avec l'historique complet
             rag_response = self.agent_rag.search(self.historique)
 
-            # ✅ Nouvelle version tolérante : dict ou str
+            # Gestion tolérante selon que la réponse est dict ou str
             if isinstance(rag_response, dict) and "output" in rag_response:
                 output = rag_response["output"].strip()
             elif isinstance(rag_response, str):
@@ -107,18 +152,26 @@ class ChatModel:
                 output = ""
 
         except Exception as e:
+            # En cas d'erreur dans RagAgent, on affiche un avertissement et continue
             print(f"[⚠️ Erreur RagAgent] {e}")
             output = ""
 
+        # Si la sortie est trop courte ou ne contient pas les mots clés attendus,
+        # on appelle directement le LLM en fallback
         if len(output) < 20 or not any(m in output.lower() for m in RESPONSE_MARKERS):
             try:
                 output = self.llm.invoke(self.historique).content.strip()
             except Exception as e:
+                # En cas d'erreur LLM direct, on retourne une réponse générique
                 print(f"[⚠️ Erreur LLM direct] {e}")
                 output = "Je ne sais pas."
 
+        # On filtre la sortie pour garder uniquement la réponse finale et la source
         filtered_output = self._filter_final_answer_and_source(output)
 
+        # On ajoute la réponse AI à l'historique pour conserver le contexte
         self.historique.append(AIMessage(content=filtered_output))
+
+        # Retour de la réponse finale filtrée
         return filtered_output
 
