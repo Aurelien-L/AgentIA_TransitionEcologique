@@ -54,6 +54,13 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 * [Interface Streamlit](document_README/streamlit.md)
 
 ## Installation
+>[!WARNING]
+>Assurez-vous d'avoir *Python 3.10* d'installé sur votre machine, ainsi qu'*Ollama* avec le LLM que vous souhaitez utiliser (si vous souhaitez en utiliser un autre que *llama3*, modifiez la variable **MODEL_NAME** dans **model.py**). Veillez également à installer **nomic-embed-text** dans Ollama (obligatoire) :
+
+```sh
+ollama run nomic-embed-text
+```
+  
 
 1. **Cloner le dépôt :**
    ```sh
