@@ -67,7 +67,7 @@ Nous avons créé **Bulby**, un assistant intelligent spécialisé dans la trans
 
 3. **Lancer l’application :**
    ```sh
-   streamlit run main.py
+   python main.py
    ```
 
 ## Utilisation
