@@ -1,27 +1,39 @@
-# 📄 Traitement des fichiers PDF
-Le pipeline inclut également un module dédié au traitement des fichiers PDF, afin d’extraire leur contenu textuel et de le rendre exploitable pour l’indexation vectorielle.
+# 📁 Traitement des fichiers PDF
+Lors du nettoyage, les fichiers .pdf sont traités par la fonction clean_pdf_files().
+Elle automatise l'extraction du texte par page, le nettoyage, et la sauvegarde de chaque page au format Parquet, tout en construisant des objets Document exploitables par LangChain.
 
 ## 🔧 Fonctionnement général
+Les fichiers PDF sont traités en parallèle via un ThreadPoolExecutor pour améliorer la vitesse.
 
-* Chaque fichier PDF est analysé pour extraire son texte intégral, page par page.
-* Le texte extrait est nettoyé, encapsulé dans un Document, et sauvegardé au format .parquet.
-* Le traitement est effectué en parallèle grâce à un ThreadPoolExecutor, ce qui le rend rapide même pour un grand nombre de fichiers.
+Chaque fichier PDF est soumis au pipeline suivant :
 
-## 🛠 Description des fonctions
+* 📄 Lecture page par page avec PyMuPDF (fitz).
 
-|Fonction|Rôle|
-|:--|:--|
-|extract_text_from_pdf|Ouvre un PDF avec PyMuPDF (fitz) et extrait le texte de toutes les pages.|
-|process_pdf_file|Nettoie et transforme un PDF en objet Document, tout en le sauvegardant au format `.parquet`|
-|clean_pdf_files|Applique process_pdf_file à tous les fichiers PDF du dossier d’entrée, en parallèle.|
+* 🧹 Nettoyage du texte :
 
-## ✅ Objectif
+    * Suppression des espaces multiples, tabulations, retours à la ligne superflus.
+    * Trim du contenu.
 
-* Unifier les formats des documents en sortie (.parquet + Document).
-* Automatiser le nettoyage et l'extraction.
-* Assurer la traçabilité via des métadonnées (source = nom du fichier original).
+* 💾 Sauvegarde au format .parquet : une page ➜ un fichier.
 
-## 🧠 Remarques techniques
+* 📦 Création d’un objet LangChain.Document pour chaque page, avec le texte et la source.
 
-* La librairie PyMuPDF est utilisée car elle est rapide, fiable, et offre un bon support multilingue.
-* Les documents nettoyés sont prêts pour le chunking et l’indexation vectorielle dans la base Chroma utilisée plus tard dans la pipeline.
+Chaque étape est journalisée avec des emojis pour un suivi visuel clair.
+
+## 🛠 Résumé des fonctions principales
+|Fonction|	Rôle|
+|---|---|
+|clean_text|	Nettoie le texte extrait (espaces, retours, trim).|
+|extract_text_from_pdf|	Extrait et nettoie le texte page par page d’un PDF.|
+|process_pdf_file|	Gère l’extraction et la sauvegarde d’un fichier PDF complet.|
+|clean_pdf_files|	Applique process_pdf_file à tous les PDF d’un dossier.|
+
+## ✅ Avantages de cette approche
+
+* Granulaire : chaque page est traitée séparément (utile pour la recherche sémantique).
+
+* Interopérable : conversion directe vers le format .parquet + création d’objets Document pour LangChain.
+
+* Performant : le traitement est parallélisé pour traiter plusieurs PDF rapidement.
+
+* Fiable : les erreurs d’extraction sont loguées, mais ne bloquent pas l’ensemble du traitement.

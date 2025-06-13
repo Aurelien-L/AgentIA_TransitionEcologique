@@ -1,29 +1,44 @@
-# 📊 Traitement des fichiers Excel (.xls, .xlsx)
-Le projet intègre un pipeline de nettoyage pour les fichiers Excel, visant à les transformer en un format structuré et exploitable (au format .parquet).
+# 📁 Traitement des fichiers Excel
+Les fichiers .xls et .xlsx sont traités par la fonction read_xls_files().
+Elle automatise la lecture, le nettoyage sémantique, le remplissage des champs manquants, et la conversion au format Parquet pour tous les fichiers Excel présents dans un dossier donné.
 
 ## 🔧 Fonctionnement général
-Les fichiers .xls et .xlsx sont lus à l’aide de Polars, avec une tentative de repli via Pandas si nécessaire.
+Les fichiers Excel sont lus en parallèle à l’aide de ThreadPoolExecutor pour accélérer le traitement.
 
-Les cellules vides sont remplies par défaut pour assurer une uniformité des colonnes.
+Chaque fichier .xls / .xlsx est soumis au processus suivant :
 
-Chaque fichier nettoyé est sauvegardé en .parquet dans un répertoire de sortie.
+* 📥 Lecture initiale avec Polars (pl.read_excel()).
 
-## 🛠 Description des fonctions
+* 🛟 Fallback automatique via Pandas si Polars échoue :
 
-|Fonction|Rôle|
-|:--|:--|
-|`process_excel_file`|Tente de lire un fichier Excel avec Polars, sinon Pandas. Nettoie les données et les enregistre.|
-|`read_xls_files`|Applique process_excel_file à tous les fichiers Excel d’un dossier donné, en parallèle.|
+    * .xlsx → openpyxl
+    * .xls → xlrd
 
-## ✅ Objectifs
+* 🧹 Nettoyage sémantique :
 
-* Garantir la robustesse de la lecture (grâce au fallback Pandas si Polars échoue).
-* Nettoyer et homogénéiser les données provenant de fichiers Excel hétérogènes.
-* Optimiser la performance via du traitement parallèle (multithreading avec ThreadPoolExecutor).
+    * Suppression des espaces multiples
+    * Nettoyage des tabulations, sauts de ligne, etc.
+    * Trim des chaînes de caractères.
 
-## 🧠 Remarques techniques
+* 🕳️ Remplissage des champs vides (null ➜ "").
 
-* Le repli automatique vers Pandas permet de gérer les fichiers problématiques qui ne peuvent pas être lus directement par Polars.
-* Le format .parquet est choisi pour sa compacité, sa vitesse d'accès, et sa compatibilité avec les outils de traitement de données.
-* Les fichiers transformés sont ensuite utilisés dans la phase d’indexation vectorielle.
+* 💾 Conversion et export du fichier au format .parquet.
 
+Chaque étape affiche une notification avec des emojis pour un suivi rapide.
+
+## 🛠 Résumé des fonctions principales
+|Fonction|	Rôle|
+|---|---|
+|clean_semantic_noise|	Supprime les bruits dans les colonnes texte (espaces, tab, etc.).|
+|process_excel_file|	Lit, nettoie et convertit un fichier Excel en .parquet.|
+|read_xls_files|	Applique process_excel_file à tous les fichiers Excel d’un dossier.|
+
+✅ Avantages de cette approche
+
+* Multi-format : fonctionne à la fois avec les fichiers .xls et .xlsx.
+
+* Tolérant aux erreurs : fallback automatique via Pandas si Polars échoue.
+
+* Performant : traitement parallélisé pour accélérer les conversions.
+
+* Compatible : production de fichiers .parquet nettoyés et homogènes pour un usage en indexation ou analyse.
