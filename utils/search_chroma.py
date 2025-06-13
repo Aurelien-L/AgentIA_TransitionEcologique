@@ -4,7 +4,15 @@ from langchain.vectorstores import Chroma as VectorstoreChroma
 from langchain.schema import Document
 from duckduckgo_search import DDGS
 import time
+"""
+Ce module fournit deux fonctions principales :
+1. `documentSearch(query)` pour effectuer une recherche vectorielle dans une base Chroma locale.
+2. `duck_search(query)` pour lancer une recherche web à l’aide de DuckDuckGo.
 
+Il utilise des embeddings générés par Ollama (`nomic-embed-text`) et supporte un cache pour les recherches web.
+"""
+
+# === Configuration de la base Chroma ===
 CHROMA_DIR = "chroma_db"
 EMBEDDING_MODEL = "nomic-embed-text"
 
@@ -34,8 +42,23 @@ def documentSearch(query: str, k: int = 24) -> str:
 
 _cache_duck_search = {}
 
-def duck_search(query: str, max_retries=3, retry_delay=5) -> str:
-    # Cache en mémoire
+def duck_search(query: str, max_retries: int = 3, retry_delay: int = 5) -> str:
+    """
+    Effectue une recherche web via DuckDuckGo et retourne un résumé des résultats.
+
+    La fonction utilise un cache en mémoire pour éviter des appels redondants.
+    En cas d’échec temporaire (ex : problème réseau), elle tente plusieurs fois
+    avec une pause entre les tentatives.
+
+    Args:
+        query (str): La requête utilisateur à envoyer à DuckDuckGo.
+        max_retries (int): Nombre maximal de tentatives en cas d'échec.
+        retry_delay (int): Délai (en secondes) entre deux tentatives.
+
+    Returns:
+        str: Résumé textuel des résultats web ou message d’erreur.
+    """
+    # Vérifie si le résultat est déjà en cache
     if query in _cache_duck_search:
         return _cache_duck_search[query]
 
@@ -44,12 +67,13 @@ def duck_search(query: str, max_retries=3, retry_delay=5) -> str:
         try:
             with DDGS() as ddgs:
                 results = ddgs.text(query, max_results=7)
+                # Concatène les extraits de texte trouvés (si présents)
                 snippets = "\n".join([r["body"] for r in results if "body" in r])
                 response = snippets or "Aucune information trouvée sur le web."
-                
-                # Stockage en cache
+
+                # Stocke dans le cache
                 _cache_duck_search[query] = response
-                
+
                 print(f"[duck_search] Requête réussie pour : {query}")
                 return response
 
