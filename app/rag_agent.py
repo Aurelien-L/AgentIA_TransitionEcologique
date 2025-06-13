@@ -70,7 +70,7 @@ class RagAgent:
         "Action: <choisir uniquement [Recherche documents] ou [Recherche web]>\n"
         "Action Input: <requête à rechercher>\n"
         "Observation: <résultat obtenu>\n\n"
-        "Quand tu as suffisamment d'informations, tu termines par :\n"
+        "tu termines par :\n"
         "Thought: J'ai réuni suffisamment d'informations.\n"
         "Final Answer: <réponse finale claire et concise en français>\n"
         "Source : <Documents, Web, IA ou combinaison>\n\n"

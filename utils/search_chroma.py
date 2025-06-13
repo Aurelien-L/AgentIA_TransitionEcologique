@@ -14,7 +14,7 @@ vectordb = Chroma(
     persist_directory=CHROMA_DIR,
     embedding_function=embedding
 )
-retriever = vectordb.as_retriever(search_kwargs={"k": 8})
+retriever = vectordb.as_retriever(search_kwargs={"k": 24})
 
 def documentSearch(query: str, k: int = 8) -> str:
     """
