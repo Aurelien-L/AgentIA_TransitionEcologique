@@ -19,78 +19,106 @@ else:
     llm = ChatOllama(model=MODEL_NAME, temperature=0)
 
 SYSTEM_PROMPT = """
-Vous êtes un assistant intelligent utilisant la méthode ReAct (Reasoning + Acting).
+Tu es un assistant intelligent spécialisé dans les questions liées à la transition écologique.
 
-Pour répondre à la question de l'utilisateur, vous devez suivre ce format précis et strict, étape par étape :
+Tu suis la méthode ReAct (Reasoning + Acting) avec les règles suivantes :
 
-Question: <question posée par l'utilisateur>
+1. Tu DOIS toujours commencer par une **Recherche documents**.
+2. Tu dois OBLIGATOIREMENT inclure les résultats de la recherche documentaire dans ta réponse finale, même partiellement.
+3. Tu ne peux effectuer une **Recherche web** que si les documents ne suffisent pas, et tu dois le justifier dans ta réflexion.
+4. Tu ne peux faire de **raisonnement IA** (sans source) qu’en tout dernier recours absolu, et uniquement si les documents ET le web sont vides ou non pertinents.
+5. Ta réponse finale doit être 100 pourcent fondée sur des sources et contenir obligatoirement la mention :  
+   **Source : Documents, Web, IA ou combinaison**
 
-Thought: <votre réflexion sur la prochaine étape à effectuer>
+**Format strict à respecter à chaque étape :**
 
-Action: <choisissez exactement une action parmi : "Recherche documents" ou "Recherche web">
+Question: <question de l'utilisateur>  
+Thought: <ta réflexion sur la prochaine étape>  
+Action: <choisis uniquement "Recherche documents" ou "Recherche web">  
+Action Input: <requête à rechercher>  
+Observation: <résultat de la recherche>  
 
-Action Input: <la requête exacte que vous envoyez à cette action>
+tu termines par :  
+Thought: J'ai réuni suffisamment d'informations.  
+Final Answer: <réponse finale claire et concise, en français>  
+Source : <indique la ou les sources utilisées : Documents, Web, IA ou combinaison>
 
-Observation: <les résultats ou informations obtenues suite à l'action>
+---
 
-Vous pouvez répéter autant de fois que nécessaire la séquence Thought → Action → Action Input → Observation.
+Exemple :
 
-Quand vous disposez d'assez d'informations pour répondre, terminez par :
+Question: Quelle est l’empreinte carbone totale de la France en 2021 ?  
+Thought: Je commence par chercher dans les documents officiels.  
+Action: Recherche documents  
+Action Input: empreinte carbone France 2021  
+Observation: Les documents indiquent que l’empreinte carbone totale était d’environ 663 millions de tonnes équivalent CO2.  
+Thought: J'ai réuni suffisamment d'informations.  
+Final Answer: L'empreinte carbone totale de la France en 2021 était d'environ 663 millions de tonnes équivalent CO2.  
+Source : Documents
 
-Thought: J'ai réuni suffisamment d'informations.
+---
 
-Final Answer: <votre réponse complète et concise en français>
-
-Important :  
-- Après chaque Thought, vous devez obligatoirement spécifier une Action.  
-- L'Action doit être exactement "Recherche documents" ou "Recherche web".  
-- Respectez strictement la casse, la ponctuation, les espaces et le format indiqué.  
-- Ne donnez aucune explication ou commentaire hors du cadre indiqué.  
-- La réponse finale doit être factuelle, claire et concise.
-- Termine toujours la réponse finale par : **Source : <...>** (Documents, Web, IA ou une combinaison).
+⚠️ NE JAMAIS donner de réponse IA sans avoir exploité les documents.  
+⚠️ Le Web est un complément optionnel si les documents sont insuffisants.  
+⚠️ Ne saute aucune étape, ne change jamais le format, respecte strictement la structure.
 """
 
-RESPONSE_MARKERS = [
-    "réponse :", 
-    "final answer", 
-    "voici ce que je recommande", 
-    "donc", 
-    "en résumé",
-    "source :"
-]
+
+RESPONSE_MARKERS = ["réponse", "final answer", "source :"]
 
 class ChatModel:
     def __init__(self, model=llm, system_prompt=SYSTEM_PROMPT):
         self.system_prompt = system_prompt
         self.llm = model
         self.historique = [SystemMessage(content=system_prompt)]
-        self.agent_rag = RagAgent(self.llm, system_prompt=self.system_prompt)
+        self.agent_rag = RagAgent(self.llm, system_prompt=system_prompt)
+
+    def _filter_final_answer_and_source(self, text: str) -> str:
+        final_answer = None
+        source = None
+
+        for line in text.splitlines():
+            line_lower = line.lower().strip()
+            if line_lower.startswith("final answer:"):
+                final_answer = line.split(":", 1)[1].strip()
+            elif line_lower.startswith("source :"):
+                source = line.split(":", 1)[1].strip()
+
+        if final_answer is None:
+            return text.strip()
+
+        if source:
+            return f"{final_answer}\n\nSource : {source}"
+        else:
+            return final_answer
 
     def model_response(self, message: str) -> str:
         self.historique.append(HumanMessage(content=message))
 
         try:
             rag_response = self.agent_rag.search(self.historique)
-            if isinstance(rag_response, dict):
-                output = rag_response.get("output", "").strip()
+
+            # ✅ Nouvelle version tolérante : dict ou str
+            if isinstance(rag_response, dict) and "output" in rag_response:
+                output = rag_response["output"].strip()
+            elif isinstance(rag_response, str):
+                output = rag_response.strip()
             else:
-                output = str(rag_response).strip()
+                output = ""
+
         except Exception as e:
             print(f"[⚠️ Erreur RagAgent] {e}")
             output = ""
 
-        is_short = len(output) < 20
-        is_generic = output.lower() in ["je ne sais pas.", "je ne suis pas sûr.", ""]
-        lacks_final = not any(marker in output.lower() for marker in RESPONSE_MARKERS)
-        missing_source_tag = not "source :" in output.lower()
-
-        if is_short or is_generic or lacks_final or missing_source_tag:
+        if len(output) < 20 or not any(m in output.lower() for m in RESPONSE_MARKERS):
             try:
-                response = self.llm.invoke(self.historique)
-                output = response.content.strip()
+                output = self.llm.invoke(self.historique).content.strip()
             except Exception as e:
-                print(f"[⚠️ Erreur modèle principal] {e}")
+                print(f"[⚠️ Erreur LLM direct] {e}")
                 output = "Je ne sais pas."
 
-        self.historique.append(AIMessage(content=output))
-        return output
+        filtered_output = self._filter_final_answer_and_source(output)
+
+        self.historique.append(AIMessage(content=filtered_output))
+        return filtered_output
+
