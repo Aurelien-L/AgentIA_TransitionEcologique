@@ -81,34 +81,6 @@ print(web_results)
 
 ---
 
-## 🔐 Dépendances
-
-Installe les paquets requis via :
-
-```bash
-pip install langchain duckduckgo_search langchain-chroma langchain-ollama
-```
-
----
-
-## 📦 Structure des résultats
-
-### Documentaire
-```
-🔹 Résultat 1:
-Contenu extrait du document...
-(Source: fichier_x.parquet)
-```
-
-### Web
-```
-🔗 Titre de la page
-Résumé du contenu
-➡️ https://lien
-```
-
----
-
 ## 🧩 Intégration
 
 Tu peux intégrer les fonctions `documentSearch()` et `duck_search()` comme outils d'un agent RAG LangChain, par exemple via un `Tool` ou un `Retriever`.
