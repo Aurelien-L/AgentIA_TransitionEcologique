@@ -1,9 +1,12 @@
-from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
-from langchain.vectorstores import Chroma as VectorstoreChroma
-from langchain.schema import Document
-from duckduckgo_search import DDGS
+import hashlib
 import time
+import logging
+
+from duckduckgo_search import DDGS
+from langchain.memory import ConversationBufferMemory
+from langchain_ollama import OllamaEmbeddings
+from langchain_chroma import Chroma
+
 """
 Ce module fournit deux fonctions principales :
 1. `documentSearch(query)` pour effectuer une recherche vectorielle dans une base Chroma locale.
@@ -12,26 +15,75 @@ Ce module fournit deux fonctions principales :
 Il utilise des embeddings générés par Ollama (`nomic-embed-text`) et supporte un cache pour les recherches web.
 """
 
-# === Configuration de la base Chroma ===
+# Paramètres globaux
 CHROMA_DIR = "chroma_db"
 EMBEDDING_MODEL = "nomic-embed-text"
 
-# Initialisation globale pour réutilisation
+# Création des embeddings avec Ollama
 embedding = OllamaEmbeddings(model=EMBEDDING_MODEL)
-vectordb = Chroma(
-    persist_directory=CHROMA_DIR,
-    embedding_function=embedding
-)
-retriever = vectordb.as_retriever(search_kwargs={"k": 24})
+
+def create_advanced_retriever(k=20, threshold=0.8):
+    """
+    Crée un retriever MMR avec suppression de doublons et filtrage par score.
+
+    Args:
+        k (int): Nombre de documents retournés.
+        threshold (float): Seuil minimal de similarité (entre 0 et 1).
+
+    Returns:
+        callable: fonction de recherche vectorielle avancée prenant une requête string.
+    """
+    vectordb = Chroma(
+        persist_directory=CHROMA_DIR,
+        embedding_function=embedding
+    )
+
+    retriever = vectordb.as_retriever(
+        search_type="mmr",  # max marginal relevance = diversité + pertinence
+        search_kwargs={
+            "k": k,
+            "fetch_k": 50,
+            "lambda_mult": 0.5
+        }
+    )
+
+    def deduplicate(docs):
+        """Élimine les doublons exacts en hachant le contenu."""
+        seen = set()
+        uniques = []
+        for doc in docs:
+            h = hashlib.md5(doc.page_content.encode()).hexdigest()
+            if h not in seen:
+                uniques.append(doc)
+                seen.add(h)
+        return uniques
+
+    def search(query):
+        """Recherche dans la base vectorielle avec filtres."""
+        docs = retriever.get_relevant_documents(query)
+        filtered_docs = [d for d in docs if d.metadata.get("score", 1.0) >= threshold]
+        return deduplicate(filtered_docs)
+
+    return search
+
+# Initialise le retriever avancé
+advanced_search = create_advanced_retriever(k=24, threshold=0.78)
 
 def documentSearch(query: str, k: int = 24) -> str:
     """
-    Lance une recherche vectorielle via retriever
+    Lance une recherche vectorielle avancée sur les documents indexés.
+
+    Args:
+        query (str): Question utilisateur.
+        k (int): Nombre de documents max à retourner.
+
+    Returns:
+        str: Résumé formaté des résultats trouvés.
     """
-    docs = retriever.get_relevant_documents(query)
+    docs = advanced_search(query)
 
     if not docs:
-        return "Aucun document trouvé"
+        return "Aucun document trouvé."
 
     results = []
     for i, doc in enumerate(docs, 1):
@@ -40,49 +92,36 @@ def documentSearch(query: str, k: int = 24) -> str:
         )
     return "\n".join(results)
 
-_cache_duck_search = {}
 
-def duck_search(query: str, max_retries: int = 3, retry_delay: int = 5) -> str:
+def duck_search(query: str, max_results: int = 5, retries: int = 3, delay: float = 1.5) -> str:
     """
-    Effectue une recherche web via DuckDuckGo et retourne un résumé des résultats.
-
-    La fonction utilise un cache en mémoire pour éviter des appels redondants.
-    En cas d’échec temporaire (ex : problème réseau), elle tente plusieurs fois
-    avec une pause entre les tentatives.
+    Lance une recherche web robuste via DuckDuckGo avec relances.
 
     Args:
-        query (str): La requête utilisateur à envoyer à DuckDuckGo.
-        max_retries (int): Nombre maximal de tentatives en cas d'échec.
-        retry_delay (int): Délai (en secondes) entre deux tentatives.
+        query (str): Sujet à rechercher.
+        max_results (int): Nombre max de résultats à retourner.
+        retries (int): Nombre de tentatives.
+        delay (float): Pause (en secondes) entre chaque tentative.
 
     Returns:
-        str: Résumé textuel des résultats web ou message d’erreur.
+        str: Résultats formatés ou message d’échec.
     """
-    # Vérifie si le résultat est déjà en cache
-    if query in _cache_duck_search:
-        return _cache_duck_search[query]
-
-    attempt = 0
-    while attempt < max_retries:
+    for attempt in range(1, retries + 1):
         try:
+            results = []
             with DDGS() as ddgs:
-                results = ddgs.text(query, max_results=7)
-                # Concatène les extraits de texte trouvés (si présents)
-                snippets = "\n".join([r["body"] for r in results if "body" in r])
-                response = snippets or "Aucune information trouvée sur le web."
+                for r in ddgs.text(query, region="fr-fr", safesearch="Moderate", max_results=max_results):
+                    title = r.get("title", "Sans titre")
+                    body = r.get("body", "")
+                    href = r.get("href", "")
+                    results.append(f"🔗 {title}\n{body}\n➡️ {href}\n")
 
-                # Stocke dans le cache
-                _cache_duck_search[query] = response
-
-                print(f"[duck_search] Requête réussie pour : {query}")
-                return response
+            if results:
+                return "\n".join(results)
 
         except Exception as e:
-            print(f"[duck_search] Erreur lors de la recherche web : {e}")
-            attempt += 1
-            if attempt < max_retries:
-                print(f"[duck_search] Nouvelle tentative dans {retry_delay} secondes...")
-                time.sleep(retry_delay)
-            else:
-                print(f"[duck_search] Échec après {max_retries} tentatives.")
-                return "Erreur lors de la recherche web, veuillez réessayer plus tard."
+            print(f"[Tentative {attempt}] Erreur DuckDuckGo : {e}")
+
+        time.sleep(delay)  # Petite pause avant nouvelle tentative
+
+    return "Aucun résultat web trouvé après plusieurs tentatives."
